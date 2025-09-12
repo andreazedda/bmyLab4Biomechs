@@ -1,0 +1,266 @@
+# Configurazione per EKF_for_vel_and_pos_est_from_acc
+
+# Tipo di accelerazione da utilizzare
+# Opzioni: 'linear', 'uncalibrated'
+acceleration_type: 'linear'
+
+# Asse da analizzare 
+# Opzioni: 'X', 'Y', 'Z', 'all'
+analysis_axis: 'all'
+
+# ============================================
+# CONTROLLI DI VALIDAZIONE E QUALITÀ OUTPUT
+# ============================================
+output_validation:
+  enabled: true
+  
+  # Soglie di validazione per i risultati
+  velocity_bounds:
+    min_value: -5.0      # m/s - Velocità minima accettabile
+    max_value: 5.0       # m/s - Velocità massima accettabile
+    max_std: 1.0         # m/s - Deviazione standard massima accettabile
+    
+  position_bounds:
+    min_value: -10.0     # m - Posizione minima accettabile
+    max_value: 10.0      # m - Posizione massima accettabile
+    max_std: 2.0         # m - Deviazione standard massima accettabile
+    
+  acceleration_bounds:
+    min_value: -20.0     # m/s² - Accelerazione minima accettabile
+    max_value: 20.0      # m/s² - Accelerazione massima accettabile
+    max_std: 5.0         # m/s² - Deviazione standard massima accettabile
+    
+  # Controlli di consistenza fisica
+  physics_validation:
+    max_velocity_change: 2.0    # m/s - Cambio massimo di velocità per campione
+    max_acceleration_change: 10.0  # m/s² - Cambio massimo di accelerazione per campione
+    drift_threshold: 0.1        # m/s - Soglia per rilevare deriva eccessiva
+    
+  # Azioni in caso di validazione fallita
+  validation_actions:
+    on_bounds_violation: 'warn'     # 'warn', 'error', 'ignore'
+    on_physics_violation: 'warn'    # 'warn', 'error', 'ignore'
+    on_drift_detection: 'correct'   # 'warn', 'error', 'correct', 'ignore'
+    
+# ============================================
+# OPZIONI DI CONTROLLO E SCELTA AVANZATE
+# ============================================
+execution_control:
+  # Modalità di esecuzione
+  mode: 'auto'  # 'auto', 'interactive', 'batch'
+  
+  # Controllo step-by-step
+  step_by_step:
+    enabled: false
+    pause_after_preprocessing: false  # Pausa dopo caricamento e preprocessing dati
+    pause_after_ekf: false  # Pausa dopo ogni esecuzione EKF
+    pause_after_postprocessing: false  # Pausa dopo salvataggio risultati
+    pause_before_visualization: false  # Pausa prima della visualizzazione
+    pause_before_completion: false  # Pausa finale prima di terminare
+    
+  # Conferme utente
+  user_confirmations:
+    confirm_before_optimization: false
+    confirm_parameter_changes: false
+    confirm_file_overwrites: true
+    
+  # Backup e sicurezza
+  backup_existing_files: true
+  create_timestamp_folders: true
+  
+# ============================================
+# SELEZIONE ALGORITMI E VARIANTI
+# ============================================
+algorithm_choices:
+  # Variante del filtro EKF
+  ekf_variant: 'standard'  # 'standard', 'adaptive', 'robust'
+  
+  # Metodo di correzione deriva
+  drift_correction_method: 'polynomial'  # 'polynomial', 'high_pass', 'integration_reset'
+  
+  # Algoritmo di ottimizzazione
+  optimization_algorithm: 'adaptive'  # 'random', 'grid', 'adaptive', 'genetic'
+  
+  # Metodo di smoothing
+  smoothing_method: 'savgol'  # 'savgol', 'butterworth', 'median', 'gaussian'
+  
+  # Rilevamento outlier
+  outlier_detection: 'iqr'  # 'iqr', 'zscore', 'isolation_forest', 'local_outlier'
+
+# Percorsi dei file
+input_files:
+  linear: 'data/inputs/FILE_SENSOR_ACCELERATION_LINEAR2023-3-21-11-6-14.txt'
+  uncalibrated: 'data/inputs/FILE_SENSOR_ACCELERATION_UNCALIBRATED2023-3-21-11-6-14.txt'
+  
+output_files:
+  velocity: 'data/outputs/estimated_velocity.csv'
+  position: 'data/outputs/estimated_position.csv'
+  plots: 'data/outputs/ekf_plots.png'
+  
+# Parametri di ricampionamento
+resampling:
+  enabled: true
+  frequency: 100  # Hz
+  
+# Parametri di trimming del segnale
+signal_trimming:
+  enabled: true      # Abilita/disabilita il trimming del segnale
+  start_offset: 50   # Numero di campioni da eliminare all'inizio del segnale (dopo il ricampionamento)
+
+# Parametri del filtro di Kalman
+kalman_filter:
+  # Stato iniziale legacy [posizione, velocità, accelerazione, bias] per compatibilità
+  initial_state: [0.0, 0.0, 0.0, 0.0]  
+  
+  # Stato iniziale 3D [pos_x, pos_y, pos_z, vel_x, vel_y, vel_z]
+  initial_state_3d: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  
+  # Matrice di covarianza iniziale dello stato P (LEGACY 4x4)
+  initial_covariance: [0.01, 0.0, 0.0, 0.0,
+                       0.0, 0.01, 0.0, 0.0,
+                       0.0, 0.0, 0.1, 0.0,
+                       0.0, 0.0, 0.0, 0.01]
+  
+  # Matrice di covarianza iniziale 3D (6x6 - scalare verrà espanso a matrice identità)
+  initial_covariance_3d: 1.0
+  
+  # Parametri per auto-tuning adattivo
+  adaptive_threshold: 5.0      # Soglia Mahalanobis per attivare auto-tuning
+  Q_adaptive_factor: 1.1       # Fattore di incremento per Q
+  R_adaptive_factor: 0.95      # Fattore di decremento per R  
+  max_adaptations: 3           # Numero massimo di adattamenti per iterazione
+                       
+  # CORREZIONE BUG: Parametri di rumore del processo Q drasticamente ridotti per stabilità
+  process_noise:
+    position: 0.00000001  # DRASTICAMENTE ridotto da 0.0000001 per evitare esplosione covarianza
+    velocity: 0.0000001   # DRASTICAMENTE ridotto da 0.000001 per stabilità 
+    acceleration: 0.00001 # DRASTICAMENTE ridotto da 0.0001 per controllo numerico
+    bias: 0.00000001      # DRASTICAMENTE ridotto da 0.0000001 per maggiore stabilità
+    
+  # Parametri di rumore della misura R (OTTIMIZZATO per sensori smartphone)
+  measurement_noise: 0.5  # Aumentato per essere più conservativo
+  
+  # Gravità in m/s²
+  gravity: 9.81
+
+# Parametri di visualizzazione
+visualization:
+  show_plots: true
+  save_plots: true
+  plot_title: 'EKF Estimation from Android Acceleration Data'
+  
+# Debug e logging
+debug:
+  enable_debug_output: false
+  verbose: true
+
+# Parametri per Zero-Velocity Update (ZUPT) - OTTIMIZZATI per migliore detection
+zupt:
+  enabled: true        # Abilita/disabilita la tecnica ZUPT
+  window_size: 30      # Ridotta per detection più reattiva
+  threshold: 0.05      # Soglia più bassa per catturare meglio i periodi stazionari
+  min_duration: 10     # Durata minima aumentata per evitare falsi positivi
+
+# Parametri per la correzione della deriva
+drift_correction:
+  enabled: true       # Abilita/disabilita la correzione della deriva
+  polynomial_order: 2  # Ordine del polinomio per rimuovere la deriva non lineare
+
+# Parametri per il post-processing e smoothing
+post_processing:
+  velocity_smoothing:
+    enabled: true      # Abilita smoothing delle velocità
+    window_size: 7     # Dimensione finestra per media mobile
+    method: "savgol"   # Metodo: "moving_average", "savgol", "median"
+    savgol_polyorder: 3  # Ordine polinomiale per Savitzky-Golay
+  
+  outlier_removal:
+    enabled: true      # Abilita rimozione outlier
+    threshold: 2.5     # Soglia in deviazioni standard per outlier
+    method: "iqr"      # Metodo: "std", "iqr", "zscore"
+
+# Parametri per l'ottimizzazione automatica
+auto_tuning:
+  enabled: true        # Abilita/disabilita l'ottimizzazione automatica dei parametri
+  max_iterations: 10   # Numero massimo di iterazioni di ottimizzazione  
+  convergence_threshold: 0.02  # Soglia di convergenza (2% miglioramento minimo)
+  save_best_config: true       # Salva automaticamente la migliore configurazione trovata
+  verbose: true        # Output dettagliato dell'ottimizzazione
+
+# Parametri per il monitoraggio delle prestazioni EKF
+performance_monitoring:
+  enabled: true          # Abilita/disabilita il monitoraggio delle prestazioni
+  
+  # Soglie per il controllo qualità
+  max_trace: 1000.0                      # Soglia massima per la traccia della matrice P
+  min_log_likelihood: -1000.0            # Soglia minima per la log-likelihood
+  
+  # Soglie per i test di consistenza statistica (basate su distribuzione Chi-quadrato)
+  nees_upper_bound: 15.5                 # Soglia superiore NEES (95% per 4 DOF)
+  nees_lower_bound: 0.71                 # Soglia inferiore NEES (5% per 4 DOF) 
+  nis_upper_bound: 6.63                  # Soglia superiore NIS (95% per 1 DOF)
+  
+  # Parametri per l'analisi della bianchezza delle innovazioni
+  innovation_correlation_threshold: 0.1   # Soglia per la correlazione delle innovazioni
+  max_lag_autocorr: 20                   # Numero massimo di lag per l'autocorrelazione
+  
+  # Parametri per la convergenza
+  convergence_window: 50                 # Finestra per calcolare la convergenza
+  convergence_variance_threshold: 0.01   # Soglia di varianza relativa per la convergenza
+  
+  # Controlli periodici durante l'esecuzione
+  convergence_check_interval: 100       # Controlla convergenza ogni N iterazioni
+  
+  # Opzioni di reporting
+  generate_performance_plots: true      # Genera grafici delle prestazioni
+  save_performance_report: true        # Salva report delle prestazioni in file
+  performance_report_format: 'yaml'    # Formato del report ('yaml', 'json', 'txt')
+  
+  # ============================================
+  # ANALISI AVANZATE DI VALIDAZIONE E TUNING
+  # ============================================
+  enable_advanced_analysis: true        # Abilita analisi avanzate (innovazioni, NIS, residui, ecc.)
+  
+  # Analisi delle innovazioni
+  innovation_analysis:
+    enabled: true
+    test_normality: true                 # Test Shapiro-Wilk e Jarque-Bera per normalità
+    test_autocorrelation: true           # Test autocorrelazione delle innovazioni
+    max_autocorr_threshold: 0.15         # Soglia massima autocorrelazione accettabile
+    normality_p_threshold: 0.01         # Soglia p-value per test normalità
+  
+  # Analisi NIS (Normalized Innovation Squared)
+  nis_analysis:
+    enabled: true
+    confidence_level: 0.95               # Livello di confidenza per bounds Chi-squared
+    min_percentage_in_bounds: 90         # Percentuale minima campioni entro bounds
+    rolling_window_size: 50              # Finestra per analisi rolling
+  
+  # Analisi traccia covarianza
+  covariance_analysis:
+    enabled: true
+    detect_convergence: true             # Rileva punto di convergenza automaticamente
+    stability_threshold: 0.1             # Soglia coefficiente di variazione per stabilità
+    transient_phase_percentage: 0.2     # Percentuale iniziale considerata fase transiente
+  
+  # Analisi residui e outlier
+  residual_analysis:
+    enabled: true
+    outlier_detection_method: '3sigma'   # Metodo rilevamento outlier ('3sigma', 'iqr', 'zscore')
+    max_outlier_percentage: 5.0          # Percentuale massima outlier accettabile
+    min_r_squared: 0.7                   # R² minimo misurato vs stimato
+    test_heteroscedasticity: true        # Test eteroschedasticità residui
+  
+  # Generazione automatica raccomandazioni tuning
+  auto_tuning_recommendations:
+    enabled: true
+    priority_levels: ['high', 'medium', 'low']  # Livelli priorità raccomandazioni
+    suggest_parameter_adjustments: true  # Suggerisci fattori aggiustamento parametri
+    
+  # Confronto multi-asse (quando analysis_axis = 'all')
+  multi_axis_comparison:
+    enabled: true
+    generate_comparison_plots: true      # Grafici comparativi tra assi
+    calculate_performance_scores: true   # Calcola score performance per asse
+    identify_best_worst_axis: true       # Identifica asse migliore/peggiore
+    global_recommendations: true         # Raccomandazioni globali sistema

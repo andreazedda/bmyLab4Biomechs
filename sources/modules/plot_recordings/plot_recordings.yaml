@@ -1,0 +1,11 @@
+window_size: 250
+variance_threshold: 0.01
+min_length: 100
+slope_threshold: 0.01
+n_labels: 10
+output_path: "output/"
+input_path: "input/"
+file_name: "FILE_EULER2023-3-21-11-20-28.txt"
+spike_threshold: 5.0
+filter_window_size: 250
+high_freq_threshold: 0.1
