@@ -1,20 +1,215 @@
-# Configurazione per EKF_for_vel_and_pos_est_from_acc
+# EKF for Velocity and Position Estimation from Linear Acceleration
+# Complete configuration following the comprehensive requirements
 
-# Tipo di accelerazione da utilizzare
-# Opzioni: 'linear', 'uncalibrated'
-acceleration_type: 'linear'
+ekf:
+  sample_rate_hz: 100.0
+  gravity_mps2: 9.80665           # if data is linear acceleration (gravity removed), set use_gravity_compensation=false
+  use_gravity_compensation: false  # true if raw accel contains gravity
+  
+  # Initial state and covariance - FAST CONVERGENCE FOR BIOMECHANICS
+  initial_state: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # 9D: [pos_x, pos_y, pos_z, vel_x, vel_y, vel_z, bias_x, bias_y, bias_z]
+  initial_covariance: 
+    position: 100.0              # MUCH HIGHER - we don't know initial position well
+    velocity: 10.0               # MUCH HIGHER - allow rapid velocity adaptation  
+    bias: 1.0                    # HIGHER - faster bias learning
+  
+  clamp_accel:
+    enabled: true
+    min: -30.0
+    max: 30.0
 
-# Asse da analizzare 
-# Opzioni: 'X', 'Y', 'Z', 'all'
-analysis_axis: 'all'
+  # State & noise (discrete-time) - AGGRESSIVE BIOMECHANICAL TUNING
+  process_noise:
+    position: 0.00001            # m^2 - increased for more position tracking (1e-5) 
+    velocity: 0.002              # (m/s)^2 - MUCH higher for noisy accel data (2e-3)
+    bias: 0.00005                # (m/s^2)^2 - increased bias adaptation (5e-5)
+    z_axis_reduction_factor: 0.1 # riduci ancora la dinamica verticale
+  
+  measurement_noise: 0.01        # increased R to reduce over-trust in noisy measurements (1e-2)
+  
+  # Velocity constraint for cyclic motion (biomechanical improvement)
+  velocity_constraint:
+    enabled: true
+    apply_every: 200             # Apply constraint every 2 seconds (MORE FREQUENT)
+    window_size: 300             # Use 3-second window for velocity statistics  
+    max_correction: 2.0          # HIGHER maximum velocity correction [m/s]
+    correction_factor: 0.5       # AGGRESSIVE 50% correction factor
+  
+  # Position constraint for cyclic motion (biomechanical improvement)
+  position_constraint:
+    enabled: true
+    apply_every: 500             # Apply constraint every 5 seconds
+    window_size: 1000            # Use 10-second window for position statistics
+    max_correction: 10.0         # Maximum position correction [m]
+    correction_factor: 0.3       # 30% position correction factor
+  
+  # Real-time velocity baseline removal (biomechanical improvement)
+  velocity_baseline_removal:
+    enabled: false              # Disabled for testing
+    window_size: 500             # Rolling window for baseline estimation (5 seconds)
+    removal_factor: 0.2          # 20% baseline removal (aggressive for biomechanics)
+  
+  # Additional measurement noise for ZUPT
+  zupt_measurement_noise:
+    vx: 0.0005  # 5e-4
+    vy: 0.0005  # 5e-4
+    vz: 0.0005  # 5e-4
 
-# ============================================
-# CONTROLLI DI VALIDAZIONE E QUALITÀ OUTPUT
-# ============================================
-output_validation:
+  # ZUPT detector configuration - MORE PERMISSIVE FOR BIOMECHANICAL DATA
+  zupt:
+    enabled: true
+    window_size: 30              # Shorter window (0.3s) for faster response
+    window_samples: 30
+    accel_threshold: 0.15        # HIGHER threshold - more permissive  
+    acc_mean_thr: 0.12           # HIGHER - allow more movement
+    variance_threshold: 0.08     # HIGHER - more permissive
+    acc_std_thr: 0.1             # HIGHER - allow more variation
+    velocity_threshold: 0.15     # HIGHER - allow higher velocities
+    velocity_std_threshold: 0.2  # HIGHER - more permissive
+    min_stationary_frames: 5     # LOWER - apply ZUPT quicker
+    cooldown_samples: 10         # LOWER - allow more frequent ZUPT
+    adaptive_thresholds: true
+    auto_relax_after: 60         # FASTER relaxation (~0.6s)
+    relaxation_rate: 0.6         # FASTER rate
+    max_relax_factor: 6.0        # HIGHER max factor
+    debug: true
+
+  # Stability & numerics
+  numerics:
+    use_joseph: true
+    force_symmetry: true
+    min_eig_floor: 1e-12
+    trace_warn: 1000.0
+    trace_abort: 1e6
+    reset_on_nan: true
+
+  # Diagnostics configuration
+  diagnostics:
+    log_every_n: 50
+    save_dashboard: true
+    compute_acf: true
+    whiteness_test: true   # Ljung-Box or equivalent on innovations during ZUPT
+    compute_nees: false    # if you have ground-truth x, else false
+    compute_nis: true
+
+# Resampling configuration
+resampling:
+  enabled: false
+  target_hz: 100.0
+  method: "linear"  # linear, cubic, spline
+
+# Preprocessing configuration (applied to acceleration before EKF)
+preprocessing:
   enabled: true
   
-  # Soglie di validazione per i risultati
+  # Auto-bias estimation from initial samples (biomechanical improvement)
+  auto_bias:
+    enabled: true
+    initial_samples: 200         # Use first 2 seconds to estimate bias
+  
+  # Warm-up phase for filter stabilization  
+  warmup:
+    enabled: true
+    skip_samples: 300            # Skip first 3 seconds for filter convergence
+    fast_convergence: true       # Use higher process noise during warmup
+  
+  # Low-pass filter to remove high-frequency noise
+  lowpass_filter:
+    enabled: true
+    cutoff_hz: 12.0              # Slightly lower for biomechanical data
+    order: 4                     # 4th order Butterworth
+  
+  # Median filter to remove spikes/outliers
+  median_filter:
+    enabled: true
+    kernel_size: 7               # Larger kernel for more aggressive spike removal
+  
+  # High-pass filter to remove DC drift (optional)
+  highpass_filter:
+    enabled: false
+    cutoff_hz: 0.1               # Remove very slow drift
+    order: 2
+
+# Post-processing configuration
+postprocess:
+  enable: true
+  
+  # Detrend velocity to remove linear drift
+  detrend_velocity:
+    enabled: true
+  
+  # Detrend position to remove linear drift  
+  detrend_position:
+    enabled: true
+  
+  # High-pass filter on position to remove DC offset
+  position_highpass:
+    enabled: true
+    cutoff_hz: 0.05      # Very low frequency to preserve movement
+    order: 2
+  
+  # Savitzky-Golay smoothing for periodic motion
+  savgol_smooth:
+    enabled: true
+    window_length: 51    # Must be odd, larger = smoother
+    polyorder: 3         # Polynomial order
+  
+  # Legacy drift correction
+  drift_correction:
+    enabled: false        # Disabled since we use detrending above
+    poly_order: 2
+    scope: "global"
+    
+  # Legacy smoothing
+  smoothing:
+    enabled: false        # Disabled since we use savgol above
+    method: "savgol"
+    window: 7
+    polyorder: 2
+    
+  outlier_removal:
+    enabled: true
+    method: "iqr"
+    iqr_factor: 1.5
+
+# Input/Output configuration
+io:
+  output_dir: "data/outputs"
+  save_plots: true
+  save_csv: true
+  save_reports: true
+  default_input_key: linear
+  input_files:
+    linear:
+      filename: 'data/inputs/FILE_SENSOR_ACCELERATION_LINEAR2023-3-21-11-6-14.txt'
+      delimiter: ','
+      accel_columns: [1, 2, 3]
+    uncalibrated:
+      filename: 'data/inputs/FILE_SENSOR_ACCELERATION_UNCALIBRATED2023-3-21-11-6-14.txt'
+      delimiter: ','
+      accel_columns: [1, 2, 3]
+  
+  output:
+    csv_dir: "csv"
+    json_dir: "json"
+    yaml_dir: "yaml"
+    png_dir: "png"
+    logs_dir: "logs"
+    position_csv: "estimated_position_{axis}.csv"
+    velocity_csv: "estimated_velocity_{axis}.csv"
+    diagnostics_yaml: "diagnostics_{axis}.yaml"
+    optimization_json: "optimization_report.json"
+    tuning_json: "tuning_report_{axis}.json"
+
+# Plotting configuration
+plots:
+  style: "default"
+  show_zupt_markers: true
+  figsize: [14, 9]
+
+# Output validation
+output_validation:
+  enabled: true
   velocity_bounds:
     min_value: -5.0      # m/s - Velocità minima accettabile
     max_value: 5.0       # m/s - Velocità massima accettabile
@@ -42,117 +237,42 @@ output_validation:
     on_physics_violation: 'warn'    # 'warn', 'error', 'ignore'
     on_drift_detection: 'correct'   # 'warn', 'error', 'correct', 'ignore'
     
-# ============================================
-# OPZIONI DI CONTROLLO E SCELTA AVANZATE
-# ============================================
+# Legacy configuration (for backward compatibility)
+acceleration_type: 'linear'
+analysis_axis: 'all'
+
+# Execution control
 execution_control:
-  # Modalità di esecuzione
-  mode: 'auto'  # 'auto', 'interactive', 'batch'
-  
-  # Controllo step-by-step
+  mode: 'auto'
   step_by_step:
     enabled: false
-    pause_after_preprocessing: false  # Pausa dopo caricamento e preprocessing dati
-    pause_after_ekf: false  # Pausa dopo ogni esecuzione EKF
-    pause_after_postprocessing: false  # Pausa dopo salvataggio risultati
-    pause_before_visualization: false  # Pausa prima della visualizzazione
-    pause_before_completion: false  # Pausa finale prima di terminare
-    
-  # Conferme utente
+    pause_after_preprocessing: false
+    pause_after_ekf: false
+    pause_after_postprocessing: false
+    pause_before_visualization: false
+    pause_before_completion: false
   user_confirmations:
     confirm_before_optimization: false
     confirm_parameter_changes: false
     confirm_file_overwrites: true
-    
-  # Backup e sicurezza
   backup_existing_files: true
   create_timestamp_folders: true
-  
-# ============================================
-# SELEZIONE ALGORITMI E VARIANTI
-# ============================================
-algorithm_choices:
-  # Variante del filtro EKF
-  ekf_variant: 'standard'  # 'standard', 'adaptive', 'robust'
-  
-  # Metodo di correzione deriva
-  drift_correction_method: 'polynomial'  # 'polynomial', 'high_pass', 'integration_reset'
-  
-  # Algoritmo di ottimizzazione
-  optimization_algorithm: 'adaptive'  # 'random', 'grid', 'adaptive', 'genetic'
-  
-  # Metodo di smoothing
-  smoothing_method: 'savgol'  # 'savgol', 'butterworth', 'median', 'gaussian'
-  
-  # Rilevamento outlier
-  outlier_detection: 'iqr'  # 'iqr', 'zscore', 'isolation_forest', 'local_outlier'
 
-# Percorsi dei file
-input_files:
-  linear: 'data/inputs/FILE_SENSOR_ACCELERATION_LINEAR2023-3-21-11-6-14.txt'
-  uncalibrated: 'data/inputs/FILE_SENSOR_ACCELERATION_UNCALIBRATED2023-3-21-11-6-14.txt'
-  
-output_files:
-  velocity: 'data/outputs/estimated_velocity.csv'
-  position: 'data/outputs/estimated_position.csv'
-  plots: 'data/outputs/ekf_plots.png'
-  
-# Parametri di ricampionamento
-resampling:
-  enabled: true
-  frequency: 100  # Hz
-  
-# Parametri di trimming del segnale
-signal_trimming:
-  enabled: true      # Abilita/disabilita il trimming del segnale
-  start_offset: 50   # Numero di campioni da eliminare all'inizio del segnale (dopo il ricampionamento)
-
-# Parametri del filtro di Kalman
-kalman_filter:
-  # Stato iniziale legacy [posizione, velocità, accelerazione, bias] per compatibilità
-  initial_state: [0.0, 0.0, 0.0, 0.0]  
-  
-  # Stato iniziale 3D [pos_x, pos_y, pos_z, vel_x, vel_y, vel_z]
-  initial_state_3d: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-  
-  # Matrice di covarianza iniziale dello stato P (LEGACY 4x4)
-  initial_covariance: [0.01, 0.0, 0.0, 0.0,
-                       0.0, 0.01, 0.0, 0.0,
-                       0.0, 0.0, 0.1, 0.0,
-                       0.0, 0.0, 0.0, 0.01]
-  
-  # Matrice di covarianza iniziale 3D (6x6 - scalare verrà espanso a matrice identità)
-  initial_covariance_3d: 1.0
-  
-  # Parametri per auto-tuning adattivo
-  adaptive_threshold: 5.0      # Soglia Mahalanobis per attivare auto-tuning
-  Q_adaptive_factor: 1.1       # Fattore di incremento per Q
-  R_adaptive_factor: 0.95      # Fattore di decremento per R  
-  max_adaptations: 3           # Numero massimo di adattamenti per iterazione
-                       
-  # CORREZIONE BUG: Parametri di rumore del processo Q drasticamente ridotti per stabilità
-  process_noise:
-    position: 0.00000001  # DRASTICAMENTE ridotto da 0.0000001 per evitare esplosione covarianza
-    velocity: 0.0000001   # DRASTICAMENTE ridotto da 0.000001 per stabilità 
-    acceleration: 0.00001 # DRASTICAMENTE ridotto da 0.0001 per controllo numerico
-    bias: 0.00000001      # DRASTICAMENTE ridotto da 0.0000001 per maggiore stabilità
-    
-  # Parametri di rumore della misura R (OTTIMIZZATO per sensori smartphone)
-  measurement_noise: 0.5  # Aumentato per essere più conservativo
-  
-  # Gravità in m/s²
-  gravity: 9.81
-
-# Parametri di visualizzazione
-visualization:
-  show_plots: true
-  save_plots: true
-  plot_title: 'EKF Estimation from Android Acceleration Data'
-  
-# Debug e logging
+# Debug and validation
 debug:
-  enable_debug_output: false
+  enable_debug_output: true
   verbose: true
+  log_every_n: 25
+  print_state_snapshots: false
+  log_innovations: true
+
+# Algorithm choices
+algorithm_choices:
+  ekf_variant: 'standard'
+  drift_correction_method: 'polynomial'
+  optimization_algorithm: 'adaptive'
+  smoothing_method: 'savgol'
+  outlier_detection: 'iqr'
 
 # Parametri per Zero-Velocity Update (ZUPT) - OTTIMIZZATI per migliore detection
 zupt:
@@ -252,6 +372,25 @@ performance_monitoring:
     test_heteroscedasticity: true        # Test eteroschedasticità residui
   
   # Generazione automatica raccomandazioni tuning
+  tuning_recommendations:
+    enabled: true
+    adaptive_threshold: true             # Soglie adattive basate su stima rumore
+    suggest_zupt_params: true            # Suggerisce parametri ZUPT ottimali
+    suggest_process_noise: true          # Suggerisce valori Q ottimali
+
+# Input files configuration
+input_files:
+  linear: "data/inputs/FILE_SENSOR_ACCELERATION_LINEAR2023-3-21-11-6-14.txt"
+  uncalibrated: "data/inputs/FILE_SENSOR_ACCELERATION_UNCALIBRATED2023-3-21-11-6-14.txt"
+
+# Output files configuration  
+output_files:
+  base_dir: "data/outputs"
+  position_csv: "estimated_position_{axis}.csv"
+  velocity_csv: "estimated_velocity_{axis}.csv"
+  plots_png: "ekf_plots_{axis}.png"
+  performance_yaml: "EKF_performance_report_axis_{axis}.yaml"
+  tuning_json: "tuning_report_{axis}.json"
   auto_tuning_recommendations:
     enabled: true
     priority_levels: ['high', 'medium', 'low']  # Livelli priorità raccomandazioni

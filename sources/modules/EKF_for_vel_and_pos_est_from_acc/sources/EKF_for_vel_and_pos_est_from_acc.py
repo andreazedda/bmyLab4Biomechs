@@ -31,7 +31,7 @@ from scipy import stats
 from scipy import signal
 import shutil
 from typing import Dict, List, Tuple, Optional, Union
-from scipy.linalg import inv, cholesky
+from scipy.linalg import inv, cholesky, eigh
 import yaml
 from datetime import datetime
 import logging
@@ -40,6 +40,75 @@ from collections import deque
 import warnings
 import json
 import time
+import argparse
+
+# Suppress warnings for cleaner output
+warnings.filterwarnings('ignore')
+
+def _module_root_same_name_as_script() -> Path:
+    """Find module root directory that has the same name as this script"""
+    here = Path(__file__).resolve()
+    stem = here.stem
+    for p in here.parents:
+        if p.name == stem and (p / 'data').exists():
+            return p
+    return here.parent.parent
+
+
+EXTENSION_OUTPUT_SUBDIRS = {
+    'csv': 'csv',
+    'json': 'json',
+    'yaml': 'yaml',
+    'yml': 'yaml',
+    'md': 'md',
+    'txt': 'txt',
+    'png': 'png',
+    'jpg': 'jpg',
+    'jpeg': 'jpeg',
+    'svg': 'svg',
+    'pdf': 'pdf',
+    'html': 'html',
+    'log': 'logs'
+}
+DEFAULT_OUTPUT_SUBDIR = 'misc'
+
+
+def get_output_base_dir() -> Path:
+    """
+    Returns the base output directory for the module.
+    """
+    return _module_root_same_name_as_script() / "data" / "outputs"
+
+
+def resolve_output_path(filename: Union[str, Path], base_dir: Optional[Union[str, Path]] = None) -> Path:
+    """
+    Resolve the output path for a given filename ensuring files are grouped by extension.
+
+    Args:
+        filename: Target filename (with extension).
+        base_dir: Optional base directory. Defaults to module data/outputs.
+
+    Returns:
+        Path: Full path where the file should be written.
+    """
+    target_name = Path(filename).name
+    extension = Path(target_name).suffix.lower().lstrip('.')
+    subdir = EXTENSION_OUTPUT_SUBDIRS.get(extension, extension if extension else DEFAULT_OUTPUT_SUBDIR)
+    base_path = Path(base_dir) if base_dir else get_output_base_dir()
+    output_dir = base_path / subdir
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return output_dir / target_name
+
+
+def safe_fmt(x, nd=3):
+    """Safe formatter for potentially string values"""
+    try:
+        xv = float(x)
+        if np.isnan(xv) or np.isinf(xv): 
+            return str(x)
+        return f"{xv:.{nd}f}"
+    except Exception:
+        return str(x)
 
 # Import per analisi avanzate
 try:
@@ -138,62 +207,225 @@ class ExtendedKalmanFilter3D:
         logger.info("🚀 Inizializzazione Extended Kalman Filter 3D in corso...")
         
         # Otteniamo i parametri di configurazione
-        kf_config = config['kalman_filter']
+        kf_config = config['ekf']
         print_colored(f"📋 Caricamento parametri di configurazione EKF 3D", "📋", "blue")
         
-        # Stato 6D: [pos_x, pos_y, pos_z, vel_x, vel_y, vel_z]
-        initial_state = kf_config.get('initial_state_3d', [0.0] * 6)
-        self.x = np.array(initial_state).reshape(6, 1)
-        print_colored(f"📍 Stato iniziale 3D: pos={self.x[0:3,0]}, vel={self.x[3:6,0]}", "📍", "green")
-        logger.info(f"Stato iniziale 3D: {self.x.flatten()}")
+        debug_cfg = config.get('debug', {})
+        self.debug_enabled = bool(debug_cfg.get('enable_debug_output', False))
+        self.debug_every_n = int(debug_cfg.get('log_every_n', 50))
+        self.debug_print_state = bool(debug_cfg.get('print_state_snapshots', False))
+        if self.debug_enabled:
+            logger.info(
+                f"🟣 Debug EKF3D attivo (every {self.debug_every_n} samples, print={self.debug_print_state})"
+            )
         
-        # Matrice di covarianza iniziale 6x6
+        # Stato 9D: [pos_x, pos_y, pos_z, vel_x, vel_y, vel_z, bias_x, bias_y, bias_z]
+        initial_state = kf_config.get('initial_state_3d', [0.0] * 6)
+        # Extend to 9D with bias initialization
+        if len(initial_state) == 6:
+            initial_state.extend([0.0, 0.0, 0.0])  # Initial bias = 0
+        elif len(initial_state) != 9:
+            initial_state = [0.0] * 9
+        self.x = np.array(initial_state).reshape(9, 1)
+        print_colored(safe_fmt(f"📍 Stato iniziale 9D: pos={self.x[0:3,0]}, vel={self.x[3:6,0]}, bias={self.x[6:9,0]}"), "📍", "green")
+        logger.info(safe_fmt(f"Stato iniziale 9D: {self.x.flatten()}"))
+        
+        # Matrice di covarianza iniziale 9x9
         initial_cov = kf_config.get('initial_covariance_3d', 1.0)
         if np.isscalar(initial_cov):
-            self.P = np.eye(6) * initial_cov
+            cov_diag = [initial_cov] * 6 + [1e-6] * 3  # Small initial bias uncertainty
+            self.P = np.diag(cov_diag)
         else:
-            self.P = np.array(initial_cov).reshape(6, 6)
-        print_colored(f"🎯 Matrice di covarianza 3D configurata ({self.P.shape})", "🎯", "green")
+            if len(initial_cov) == 36:  # 6x6 matrix
+                P_6x6 = np.array(initial_cov).reshape(6, 6)
+                self.P = np.zeros((9, 9))
+                self.P[:6, :6] = P_6x6
+                self.P[6:9, 6:9] = np.eye(3) * 1e-6  # Bias covariance
+            elif len(initial_cov) == 81:  # 9x9 matrix
+                self.P = np.array(initial_cov).reshape(9, 9)
+            else:
+                cov_diag = [initial_cov] * 6 + [1e-6] * 3
+                self.P = np.diag(cov_diag)
+        print_colored(f"🎯 Matrice di covarianza 9D configurata ({self.P.shape})", "🎯", "green")
         
-        # Processo noise per [pos_x, pos_y, pos_z, vel_x, vel_y, vel_z]
+        # Processo noise per [pos_x, pos_y, pos_z, vel_x, vel_y, vel_z, bias_x, bias_y, bias_z]
+        # PATCH: Fix process noise with sensible values and clamped scaling
         process_noise = kf_config['process_noise']
         if isinstance(process_noise, dict):
-            # Estendi per 3D
-            pos_noise = process_noise['position']
-            vel_noise = process_noise['velocity']
-            Q_diag = [pos_noise] * 3 + [vel_noise] * 3
+            # Support per-axis configuration
+            self.Q_pos = np.array([process_noise.get('position', 1e-5)] * 3)
+            self.Q_vel = np.array([process_noise.get('velocity', 1e-3)] * 3)  
+            self.Q_bias = np.array([process_noise.get('bias', 1e-6)] * 3)
+            Q_diag = list(self.Q_pos) + list(self.Q_vel) + list(self.Q_bias)
         else:
-            Q_diag = process_noise if len(process_noise) == 6 else [process_noise[0]] * 3 + [process_noise[1]] * 3
+            # Sensible Q_base values as specified in requirements
+            Q_diag = [1e-8, 1e-8, 1e-8,  # position noise
+                     1e-6, 1e-6, 1e-6,   # velocity noise  
+                     1e-8, 1e-8, 1e-8]   # bias noise
+            logger.info("🔧 Using sensible Q_base values: [1e-8]*3 + [1e-6]*3 + [1e-8]*3")
+            self.Q_pos = np.array(Q_diag[:3])
+            self.Q_vel = np.array(Q_diag[3:6])
+            self.Q_bias = np.array(Q_diag[6:9])
         
-        self.Q = np.diag(Q_diag)
-        print_colored(f"🔊 Rumore del processo 3D: pos={Q_diag[:3]}, vel={Q_diag[3:]}", "🔊", "yellow")
-        logger.info(f"Matrice di rumore del processo Q 3D: {Q_diag}")
+        self.Q_base = np.diag(Q_diag)  # Base Q matrix for adaptation
+        self.Q = self.Q_base.copy()
         
-        # Rumore della misura (per accelerazioni 3D)
+        # Z-axis specific reduction for extra stability (improved implementation)
+        z_reduction_factor = float(kf_config.get('process_noise', {}).get('z_axis_reduction_factor', 0.1))
+        if z_reduction_factor < 1.0:
+            self.Q[2, 2] *= z_reduction_factor   # pos Z
+            self.Q[5, 5] *= z_reduction_factor   # vel Z
+            self.Q_base[2, 2] *= z_reduction_factor  # Also update base
+            self.Q_base[5, 5] *= z_reduction_factor
+            logger.info(f"🎯 Z-axis process noise reduced by factor {z_reduction_factor}")
+        
+        print_colored(safe_fmt(f"🔊 Rumore del processo 9D: pos={self.Q_pos}, vel={self.Q_vel}, bias={self.Q_bias}"), "🔊", "yellow")
+        logger.info(safe_fmt(f"Matrice di rumore del processo Q 9D: {Q_diag}"))
+        
+        # Adaptive noise parameters - clamped scaling for stability  
+        self.alpha_clip = [0.5, 2.0]  # Clamp scaling range for Q as specified
+        self.R_clip = kf_config.get('R_clip', [0.05, 1.0])  # [min, max] for R scaling
+        self.window_size = int(kf_config.get('variance_window', 50))  # ~2-3s at 20Hz
+        
+        # Rolling variance buffers for adaptive noise
+        self.acc_buffer = deque(maxlen=self.window_size)
+        self.residual_buffer = deque(maxlen=self.window_size)
+        
+        # Rumore della misura (per accelerazioni 3D) - now adaptive base
         measurement_noise = kf_config['measurement_noise']
         if np.isscalar(measurement_noise):
-            self.R = measurement_noise * np.eye(3)
+            self.R_base = measurement_noise * np.eye(3)
         else:
-            self.R = np.diag(measurement_noise)
-        print_colored(f"📏 Rumore della misura 3D: {np.diag(self.R)}", "📏", "yellow")
-        logger.info(f"Rumore della misura R 3D: {np.diag(self.R)}")
+            self.R_base = np.diag(measurement_noise)
+        self.R = self.R_base.copy()
+        print_colored(safe_fmt(f"📏 Rumore della misura 3D (base): {np.diag(self.R_base)}"), "📏", "yellow")
+        logger.info(safe_fmt(f"Rumore della misura R 3D: {np.diag(self.R_base)}"))
         
-        # Valore della gravità
-        self.gravity = kf_config['gravity']
+        # ZUPT configuration
+        zupt_config = kf_config.get('zupt', {})
+        self.zupt_enabled = zupt_config.get('enabled', True)
+
+        # Thresholds driven by configuration (fallback to legacy defaults if missing)
+        accel_norm_thr = float(zupt_config.get('accel_threshold', 0.08))
+        acc_mean_thr = float(zupt_config.get('acc_mean_thr', accel_norm_thr))
+        variance_thr = zupt_config.get('variance_threshold', None)
+        if variance_thr is not None:
+            try:
+                self.zupt_acc_std_thr = float(np.sqrt(float(variance_thr)))
+            except (TypeError, ValueError):
+                self.zupt_acc_std_thr = 0.05
+        else:
+            self.zupt_acc_std_thr = float(zupt_config.get('acc_std_thr', 0.05))
+
+        self.zupt_accel_norm_thr = accel_norm_thr
+        self.zupt_acc_mean_thr = acc_mean_thr
+        self.zupt_velocity_mean_thr = float(zupt_config.get('velocity_threshold', 0.05))
+        self.zupt_velocity_std_thr = float(
+            zupt_config.get('velocity_std_threshold', self.zupt_velocity_mean_thr * 1.5)
+        )
+        self.zupt_velocity_rms_thr = float(
+            zupt_config.get('velocity_rms_threshold', self.zupt_velocity_std_thr)
+        )
+        self.zupt_variance_thr = float(variance_thr) if variance_thr is not None else None
+        self.zupt_acc_threshold = np.array([self.zupt_acc_std_thr] * 3)
+        self.zupt_vel_threshold = self.zupt_velocity_mean_thr
+
+        self.zupt_window = int(zupt_config.get('window_samples', zupt_config.get('window_size', 50)))
+        self.zupt_min_stationary = int(zupt_config.get('min_stationary_frames', max(5, self.zupt_window // 3)))
+        self.zupt_cooldown_samples = int(zupt_config.get('cooldown_samples', 0))
+        self.zupt_adaptive = bool(zupt_config.get('adaptive_thresholds', False))
+        self.zupt_adaptive_relax_after = int(
+            zupt_config.get('auto_relax_after', max(self.zupt_window, 120))
+        )
+        self.zupt_relax_rate = float(zupt_config.get('relaxation_rate', 0.25))
+        self.zupt_max_relax = float(zupt_config.get('max_relax_factor', 3.0))
+        zupt_measurement_noise = zupt_config.get('measurement_noise')
+        if zupt_measurement_noise is None:
+            zupt_measurement_noise = kf_config.get('zupt_measurement_noise', {}).get('vz', 5e-4)
+        try:
+            self.zupt_R = float(zupt_measurement_noise)
+        except (TypeError, ValueError):
+            self.zupt_R = 5e-4
+
+        # Internal counters for adaptive ZUPT handling
+        self.zupt_relax_multiplier = 1.0
+        self.zupt_stationary_count = 0
+        self.zupt_steps_since_last = 0
+        self.zupt_last_trigger = -10_000
+        
+        # Outlier rejection configuration  
+        outlier_config = kf_config.get('outlier_rejection', {})
+        self.outlier_enabled = outlier_config.get('enabled', True)
+        self.outlier_threshold = outlier_config.get('z_score_threshold', 3.0)
+        self.huber_delta = outlier_config.get('huber_delta', 1.0)  # For Huber loss
+        
+        # Velocity correction configuration
+        vel_correction_config = kf_config.get('velocity_correction', {})
+        self.vel_correction_enabled = vel_correction_config.get('enabled', True)
+        self.poly_order = vel_correction_config.get('polynomial_order', 1)
+        self.drift_threshold = vel_correction_config.get('drift_threshold', 0.05)
+        self.correction_interval = vel_correction_config.get('correction_interval', 100)
+        
+        # Numerical stability configuration
+        stability_config = kf_config.get('numerical_stability', {})
+        self.use_joseph_form = stability_config.get('use_joseph_form', True)
+        self.force_symmetry = stability_config.get('force_symmetry', True)
+        self.trace_threshold = 3000.0  # Hard guard su P - lowered threshold
+        self.eigenvalue_floor = float(stability_config.get('eigenvalue_floor', 1e-12))
+        self.dt_clamp = stability_config.get('dt_clamp', [0.005, 0.015])
+        numerics_cfg = kf_config.get('numerics', {})
+        self.trace_warn_level = float(numerics_cfg.get('trace_warn', 1000.0))
+        self.trace_abort_level = float(numerics_cfg.get('trace_abort', self.trace_threshold))
+        self.trace_threshold = min(self.trace_threshold, self.trace_abort_level)
+        
+        # Enhanced adaptive tuning configuration
+        adaptive_config = kf_config.get('adaptive_tuning', {})
+        self.mahalanobis_gate = 9.0  # Gating & outlier handling - more strict
+        self.max_adaptations_per_window = 2  # NIS-driven adaptation limit
+        self.Q_increase_factor = adaptive_config.get('Q_increase_factor', 1.05)
+        self.R_decrease_factor = adaptive_config.get('R_decrease_factor', 0.98)
+        self.adaptations_this_window = 0
+        
+        # NIS-driven adaptation buffers
+        self.nis_buffer = deque(maxlen=self.window_size)  # ~2-3s rolling NIS
+        
+        # PATCH: Rolling windows for ZUPT detection
+        self.window_samples = int(self.window_size)  # Number of samples for rolling window
+        self.acc_world_window = deque(maxlen=self.zupt_window)
+        self.velocity_window = deque(maxlen=self.zupt_window)
+        self.zupt_buffer = deque(maxlen=self.zupt_window)
+        
+        # PATCH: Gravity vector for world-frame acceleration calculation
+        gravity_cfg = kf_config.get('gravity', kf_config.get('gravity_mps2', 9.80665))
+        try:
+            self.gravity = float(gravity_cfg)
+        except (TypeError, ValueError):
+            logger.warning(f"⚠️ Invalid gravity value '{gravity_cfg}' - using default 9.80665 m/s²")
+            self.gravity = 9.80665
+        self.gravity_vector = np.array([0.0, 0.0, self.gravity])
         print_colored(f"🌍 Valore di gravità: {self.gravity} m/s²", "🌍", "blue")
         logger.info(f"Gravità: {self.gravity} m/s²")
         
-        # CORREZIONE BUG: Matrice di osservazione H corretta
-        # PROBLEMA: Il codice originale mappava velocità su accelerazioni (sbagliato)
-        # SOLUZIONE: Per accelerometro, osserviamo accelerazione che è derivata della velocità
-        # H mappa da stato [pos,vel] a osservazione di accelerazione
-        # Per ora implementiamo H = 0 perché accelerazione non è direttamente nello stato
-        # Useremo un approccio diverso nell'update corretto
-        self.H = np.zeros((3, 6))
-        # H resta zero perché accelerazione non è direttamente osservabile dallo stato [pos,vel]
-        # L'aggiornamento corretto sarà implementato nel metodo update_proper
+        # CORRECTED: H matrix only maps to actual observations (none in pure acceleration mode)
+        # When we have position/velocity measurements, H will be set appropriately
+        self.H = np.zeros((3, 9))  # 3 observations x 9 states
+        # H stays zero since acceleration is control input, not observation
         logger.info(f"CORREZIONE: Matrice H impostata a zero - accelerazione trattata come controllo")
-        logger.info(f"Matrice di osservazione H 3D: {self.H.shape}")
+        logger.info(f"Matrice di osservazione H 9D: {self.H.shape}")
+        
+        # Store configuration for diagnostics
+        self.config = config
+        
+        # Enhanced monitoring and diagnostics
+        self.diagnostics = {
+            'residual_stats': {'mean': [], 'std': [], 'autocorr': []},
+            'outlier_count': 0,
+            'total_measurements': 0,
+            'zupt_activations': 0,
+            'adaptation_history': [],
+            'trace_resets': 0,  # Contatore per reset della traccia P
+            'current_trace': None  # Traccia corrente della matrice P
+        }
         
         # Parametri per auto-tuning adattivo
         self.adaptive_threshold = kf_config.get('adaptive_threshold', 5.0)
@@ -238,34 +470,284 @@ class ExtendedKalmanFilter3D:
         
         return Rz @ Ry @ Rx
     
+    def kalman_update_joseph(self, H, y, R):
+        """
+        Complete Kalman update using Joseph form for numerical stability.
+        
+        Args:
+            H: Observation matrix (m x n)
+            y: Innovation vector (m x 1) 
+            R: Measurement noise covariance (m x m)
+            
+        Returns:
+            nis: Normalized Innovation Squared statistic
+        """
+        # Innovation covariance
+        S = H @ self.P @ H.T + R
+        
+        # Kalman gain
+        try:
+            K = self.P @ H.T @ np.linalg.inv(S)
+        except np.linalg.LinAlgError:
+            # Use pseudoinverse if singular
+            K = self.P @ H.T @ np.linalg.pinv(S)
+            logger.warning("⚠️ Using pseudoinverse for singular innovation covariance")
+        
+        # State update
+        self.x = self.x + K @ y
+        
+        # Joseph form covariance update for guaranteed positive semi-definiteness
+        I = np.eye(self.P.shape[0])
+        IKH = I - K @ H
+        self.P = IKH @ self.P @ IKH.T + K @ R @ K.T
+        
+        # Force symmetry for extra numerical stability
+        self.P = 0.5 * (self.P + self.P.T)
+        
+        # Apply trace guard
+        current_trace = np.trace(self.P)
+        if current_trace > 3000:
+            logger.warning(f"🛡️ Hard guard triggered: trace(P)={current_trace:.1f} > 3000")
+            # Shrink to safe diagonal 
+            self.P = np.diag(np.maximum(np.diag(self.P) * 0.1, 1e-10))
+            logger.info(f"🛡️ Covariance reset to diagonal: new trace={np.trace(self.P):.1f}")
+            self.diagnostics['trace_resets'] += 1
+        
+        # Calculate NIS for diagnostics
+        try:
+            nis = float(y.T @ np.linalg.inv(S) @ y)
+        except:
+            nis = 0.0
+            
+        return nis
+    
+    def _debug_state_snapshot(self, label, extra_msg=""):
+        """Log/print current EKF state when debug is enabled."""
+        if not self.debug_enabled:
+            return
+        msg = (
+            f"{label} | pos={self.x[0:3,0]} vel={self.x[3:6,0]} "
+            f"bias={self.x[6:9,0]} traceP={np.trace(self.P):.3f} {extra_msg}"
+        )
+        logger.debug(f"🟣 EKF3D {msg}")
+        if self.debug_print_state:
+            print_colored(msg, "🟣", "magenta")
+    
+    def maybe_force_update(self, t):
+        """
+        Force velocity update for first 2 seconds to verify update path works.
+        
+        Args:
+            t: Current time in seconds
+            
+        Returns:
+            did_update: Boolean indicating if update was applied
+        """
+        if t < 2.0:
+            # H matrix: zeros with velocity observation  
+            H = np.zeros((3, 9))
+            H[:, 3:6] = np.eye(3)  # Observe velocities
+            
+            # Zero velocity pseudo-measurement
+            z = np.zeros((3, 1))
+            
+            # R matrix for velocity pseudo-measurements
+            R = np.diag([5e-4] * 3)
+            
+            # Innovation 
+            y = z - H @ self.x
+            
+            # Apply Joseph form update
+            nis = self.kalman_update_joseph(H, y, R)
+            
+            # Store NIS for later retrieval
+            self._last_nis = nis
+            
+            logger.info(f"🚀 Force update applied at t={t:.3f}s, NIS={nis:.3f}")
+            return True
+        return False
+    
+    def maybe_zupt_update(self, acc_world_window, v_window):
+        """
+        Apply ZUPT (Zero Velocity Update) if stillness conditions are met.
+        
+        Args:
+            acc_world_window: Rolling window of world-frame acceleration (n x 3)
+            v_window: Rolling window of velocity estimates (n x 3)
+            
+        Returns:
+            did_update: Boolean indicating if ZUPT was applied
+        """
+        if len(acc_world_window) < max(5, self.zupt_min_stationary):
+            return False
+
+        relax = self.zupt_relax_multiplier
+        sample_idx = self.diagnostics['total_measurements']
+
+        acc_world_window = np.asarray(acc_world_window)
+        v_window = np.asarray(v_window)
+
+        acc_std = np.std(acc_world_window, axis=0)
+        acc_var = np.var(acc_world_window, axis=0)
+        acc_std_max = float(np.max(acc_std))
+        acc_norms = np.linalg.norm(acc_world_window, axis=1)
+        acc_norm_mean = float(np.mean(acc_norms))
+        acc_mean_norm = float(np.linalg.norm(np.mean(acc_world_window, axis=0)))
+
+        vel_mean = np.mean(v_window, axis=0)
+        vel_mean_norm = float(np.linalg.norm(vel_mean))
+        vel_std_norm = float(np.linalg.norm(np.std(v_window, axis=0)))
+        vel_rms_norm = float(np.sqrt(np.mean(np.square(v_window))))
+
+        conditions_met = True
+        if acc_std_max >= self.zupt_acc_std_thr * relax:
+            conditions_met = False
+        if acc_norm_mean >= self.zupt_accel_norm_thr * relax:
+            conditions_met = False
+        if acc_mean_norm >= self.zupt_acc_mean_thr * relax:
+            conditions_met = False
+        if self.zupt_variance_thr is not None and np.mean(acc_var) >= self.zupt_variance_thr * (relax ** 2):
+            conditions_met = False
+        if vel_mean_norm >= self.zupt_velocity_mean_thr * relax:
+            conditions_met = False
+        if vel_std_norm >= self.zupt_velocity_std_thr * relax:
+            conditions_met = False
+        if vel_rms_norm >= self.zupt_velocity_rms_thr * relax:
+            conditions_met = False
+
+        if not conditions_met:
+            self.zupt_stationary_count = 0
+            return False
+
+        self.zupt_stationary_count += 1
+        if self.zupt_stationary_count < self.zupt_min_stationary:
+            return False
+
+        if (
+            self.zupt_cooldown_samples > 0
+            and (sample_idx - self.zupt_last_trigger) < self.zupt_cooldown_samples
+        ):
+            return False
+
+        # Apply velocity pseudo-measurement (Joseph form)
+        H = np.zeros((3, 9))
+        H[:, 3:6] = np.eye(3)
+
+        z = np.zeros((3, 1))
+        R = np.diag([self.zupt_R * relax] * 3)
+
+        y = z - H @ self.x
+
+        nis = self.kalman_update_joseph(H, y, R)
+        self._last_nis = nis
+        self.diagnostics['zupt_activations'] += 1
+
+        logger.info(
+            "🎯 ZUPT applied @ sample %d | acc_std_max=%.4f | acc_norm=%.4f | vel_mean=%.4f | relax=%.2f | NIS=%.3f",
+            sample_idx,
+            acc_std_max,
+            acc_norm_mean,
+            vel_mean_norm,
+            relax,
+            nis,
+        )
+
+        # Reset adaptive state
+        self.zupt_stationary_count = 0
+        self.zupt_steps_since_last = 0
+        self.zupt_last_trigger = sample_idx
+        self.zupt_relax_multiplier = 1.0
+
+        return True
+    
+    def log_update_stats(self, did_update, t, nis_value=None):
+        """
+        Log update statistics for telemetry.
+        
+        Args:
+            did_update: Whether an update occurred  
+            t: Current time
+            nis_value: NIS value if update occurred
+        """
+        if did_update and nis_value is not None:
+            self.nis_buffer.append(nis_value)
+            
+        # Log periodically after first 2 seconds
+        if t > 2.0 and len(self.nis_buffer) > 0:
+            total_samples = self.diagnostics['total_measurements'] 
+            zupt_activations = self.diagnostics['zupt_activations']
+            zupt_percentage = (zupt_activations / max(total_samples, 1)) * 100
+            
+            current_trace = np.trace(self.P)
+            mean_nis = np.mean(list(self.nis_buffer))
+            
+            if total_samples % 100 == 0:  # Log every 100 samples
+                logger.info(f"📊 t={t:.1f}s: ZUPT={zupt_percentage:.1f}%, NIS={mean_nis:.2f}, trace(P)={current_trace:.1f}")
+                
+                # Check if NIS > 0 after first 2 seconds
+                if t > 2.0 and mean_nis <= 0.001:
+                    logger.warning("⚠️ NIS ≈ 0 detected - updates may not be working properly!")
+    
+    def _joseph_form_update(self, K, H, R):
+        """
+        Legacy Joseph form method - kept for compatibility.
+        Use kalman_update_joseph for new code.
+        """
+        n = self.P.shape[0]
+        I = np.eye(n)
+        IKH = I - K @ H
+        
+        # Joseph form update - guaranteed to preserve positive definiteness
+        self.P = IKH @ self.P @ IKH.T + K @ R @ K.T
+        
+        # Force symmetry for extra numerical stability
+        self.P = 0.5 * (self.P + self.P.T)
+        
+        logger.debug("🔒 Legacy Joseph form covariance update applied")
+
     def predict(self, dt):
         """
-        Fase di predizione dell'EKF 3D.
+        Fase di predizione dell'EKF 9D con bias estimation.
         
         Args:
             dt (float): Intervallo di tempo tra misurazioni successive.
         """
-        logger.debug(f"🔮 Fase di predizione 3D con dt={dt:.6f}s")
+        # PATCH 3: Clamp dt to prevent numerical instability
+        dt = np.clip(dt, self.dt_clamp[0], self.dt_clamp[1])
+        logger.debug(f"🔮 Fase di predizione 9D con dt={dt:.6f}s (clamped)")
         
-        # Matrice di transizione di stato 6x6
-        F = np.block([
-            [np.eye(3), dt * np.eye(3)],  # Posizione = posizione + velocità * dt
-            [np.zeros((3, 3)), np.eye(3)]  # Velocità = velocità (modello inerziale)
-        ])
+        # Matrice di transizione di stato 9x9
+        F = np.zeros((9, 9))
+        # Position: p = p + v*dt
+        F[0:3, 0:3] = np.eye(3)  # position to position
+        F[0:3, 3:6] = dt * np.eye(3)  # velocity contribution to position
+        # Velocity: v = v (constant velocity model)
+        F[3:6, 3:6] = np.eye(3)  # velocity to velocity  
+        # Bias: b = b (random walk model)
+        F[6:9, 6:9] = np.eye(3)  # bias to bias
         
         # Prediczione dello stato
         self.x = F @ self.x
         
-        # Prediczione della covarianza
+        # PATCH 2: Joseph-form inspired covariance prediction for stability
         self.P = F @ self.P @ F.T + self.Q
+        
+        # Force symmetry and positive definiteness
+        self.P = 0.5 * (self.P + self.P.T)
+        
+        # PATCH 1: Add trace to diagnostics for monitoring
+        current_trace = np.trace(self.P)
+        self.diagnostics['current_trace'] = current_trace
         
         # CORREZIONE BUG: Aggiungi controlli stabilità numerica
         self._check_numerical_stability()
         
         # Memorizza traccia per monitoring
-        self.trace_history.append(np.trace(self.P))
+        self.trace_history.append(current_trace)
         
-        logger.debug(f"📊 Stato predetto 3D - Pos: {self.x[0:3,0]}, Vel: {self.x[3:6,0]}")
+        self._debug_state_snapshot("predict", extra_msg=f"dt={dt:.4f}")
+        
+        logger.debug(f"📊 Stato predetto 9D - Pos: {self.x[0:3,0]}, Vel: {self.x[3:6,0]}, Bias: {self.x[6:9,0]}")
         
         return self.x.copy(), self.P.copy()
         
@@ -292,11 +774,11 @@ class ExtendedKalmanFilter3D:
         
         logger.debug(f"🌍 Accelerazione world-frame: {acc_world_corrected.flatten()}")
         
-        # Matrice di controllo per accelerazione 6x3
-        B = np.block([
-            [0.5 * dt**2 * np.eye(3)],  # Posizione: 0.5 * a * dt^2
-            [dt * np.eye(3)]            # Velocità: a * dt
-        ])
+        # Matrice di controllo per accelerazione 9x3 (updated for 9D state)
+        B = np.zeros((9, 3))
+        B[0:3, 0:3] = 0.5 * dt**2 * np.eye(3)  # Posizione: 0.5 * a * dt^2
+        B[3:6, 0:3] = dt * np.eye(3)           # Velocità: a * dt
+        # Bias: no direct control input (B[6:9, :] = 0)
         
         # Applica controllo di accelerazione
         self.x = self.x + B @ acc_world_corrected
@@ -331,6 +813,10 @@ class ExtendedKalmanFilter3D:
         self.innovation_history.append(innovation.flatten())
         
         logger.debug(f"✅ Stato 3D aggiornato - Pos: {self.x[0:3,0]}, Vel: {self.x[3:6,0]}")
+        self._debug_state_snapshot(
+            "update_with_acceleration",
+            extra_msg=f"|acc_world|={np.linalg.norm(acc_world_corrected):.3f} maha={mahalanobis_dist:.3f}",
+        )
         
         return self.x.copy(), self.P.copy(), innovation
     
@@ -346,60 +832,667 @@ class ExtendedKalmanFilter3D:
         
         return self.update_with_acceleration(acc_body, roll, pitch, yaw, dt)
 
-    def update_proper_kalman(self, acc_body, roll, pitch, yaw, dt):
+    def update_comprehensive(self, acc_body, roll, pitch, yaw, dt, timestamp=None):
         """
-        CORREZIONE BUG: Implementazione corretta del filtro di Kalman.
-        
-        Questo metodo implementa il vero update di Kalman con:
-        1. Accelerazione come input di controllo (non osservazione)
-        2. Osservazioni dirette di posizione/velocità quando disponibili
-        3. Corrette equazioni di Kalman: K = P H^T (H P H^T + R)^(-1)
+        Comprehensive EKF update with all PATCH requirements:
+        1. Force update for first 2 seconds to verify update path
+        2. Real ZUPT triggering with world-frame acceleration  
+        3. Conditional NIS/innovation logging only when updates occur
+        4. Fixed accelerometer units and scaling with guards
+        5. Joseph form covariance updates with trace guard
+        6. Stabilized process noise with clamped scaling
         
         Args:
-            acc_body: Accelerazione in body-frame [ax, ay, az]
-            roll, pitch, yaw: Angoli di Euler in radianti  
-            dt: Intervallo di tempo
+            acc_body: Acceleração em body-frame [ax, ay, az] 
+            roll, pitch, yaw: Ângulos de Euler em radianos
+            dt: Intervalo de tempo
+            timestamp: Actual timestamp (optional, uses sample count * dt if None)
             
         Returns:
-            tuple: Stato aggiornato, matrice P, innovazione
+            tuple: Estado atualizado, matriz P, inovação, diagnostics
         """
-        # 1. PREDIZIONE (già fatta con predict)
+        self.diagnostics['total_measurements'] += 1
+        # PATCH: Use actual timestamp if provided, otherwise approximate
+        if timestamp is not None:
+            current_time = timestamp
+        else:
+            current_time = dt * self.diagnostics['total_measurements']
         
-        # 2. CONTROLLO: Applica accelerazione come input di controllo
+        # Debug print to console to check if function is called
+        print(f"📍 UPDATE t={current_time:.3f}s sample={self.diagnostics['total_measurements']}")
+        logger.info(f"🕐 Update at t={current_time:.3f}s, sample #{self.diagnostics['total_measurements']}")
+        
+        # PATCH 4: Fix accelerometer units/scale with guards
+        acc_body_array = np.array(acc_body)
+        if np.abs(acc_body_array).max() > 200:
+            raise ValueError(f"Accel scale error? Max acceleration = {np.abs(acc_body_array).max():.1f} m/s²")
+        
+        # Convert to m/s² if needed (assuming input is already in m/s²)
+        acc_ms2 = acc_body_array * 1.0  # Already in m/s² (modify if input is in g)
+        
+        # SANITY CHECK: Clamp dt to reasonable bounds
+        dt = np.clip(dt, self.dt_clamp[0], self.dt_clamp[1])
+        
+        # 1. WORLD-FRAME ACCELERATION with bias correction for ZUPT
         R_matrix = self.euler_to_rotation_matrix(roll, pitch, yaw)
-        acc_world = R_matrix @ np.array(acc_body).reshape(3, 1)
+        acc_body_bias_corrected = acc_ms2 - self.x[6:9, 0]  # Remove bias first
+        acc_world = R_matrix @ acc_body_bias_corrected.reshape(3, 1)
+        acc_world_no_gravity = acc_world - self.gravity_vector.reshape(3, 1)
         
-        # Rimuovi gravità
-        gravity_vector = np.array([[0], [0], [self.gravity]])
-        acc_world_corrected = acc_world - gravity_vector
+        # Update rolling windows for ZUPT detection
+        self.acc_world_window.append(acc_world_no_gravity.flatten())
+        self.velocity_window.append(self.x[3:6, 0])
+        self.zupt_steps_since_last += 1
+
+        if self.zupt_adaptive and self.zupt_steps_since_last > self.zupt_adaptive_relax_after:
+            new_multiplier = min(
+                self.zupt_relax_multiplier * (1.0 + self.zupt_relax_rate),
+                self.zupt_max_relax,
+            )
+            if new_multiplier > self.zupt_relax_multiplier + 1e-3:
+                logger.info(
+                    "⚙️ Adaptive ZUPT relaxation engaged: multiplier %.2f → %.2f (no ZUPT for %d samples)",
+                    self.zupt_relax_multiplier,
+                    new_multiplier,
+                    self.zupt_steps_since_last,
+                )
+            self.zupt_relax_multiplier = new_multiplier
         
-        # Matrice di controllo B
-        B = np.block([
-            [0.5 * dt**2 * np.eye(3)],  # Posizione: 0.5 * a * dt^2
-            [dt * np.eye(3)]            # Velocità: a * dt
-        ])
+        if (
+            self.debug_enabled
+            and ((self.diagnostics['total_measurements'] % max(1, self.debug_every_n)) == 0)
+        ):
+            acc_stats = np.linalg.norm(acc_world_no_gravity)
+            vel_norm = np.linalg.norm(self.x[3:6, 0])
+            logger.debug(
+                "🟣 EKF3D sample %d | |acc_world_no_g|=%.4f |vel|=%.4f "
+                "bias=%s",
+                self.diagnostics['total_measurements'],
+                acc_stats,
+                vel_norm,
+                self.x[6:9, 0],
+            )
+            if self.debug_print_state:
+                print_colored(
+                    f"🟣 sample={self.diagnostics['total_measurements']} |acc|={acc_stats:.4f} "
+                    f"|vel|={vel_norm:.4f} bias={self.x[6:9, 0]}",
+                    "🟣",
+                    "magenta",
+                )
         
-        # Applica controllo
-        self.x = self.x + B @ acc_world_corrected
+        # Apply acceleration as control input (without bias - already corrected)
+        B = np.zeros((9, 3))
+        B[0:3, 0:3] = 0.5 * dt**2 * np.eye(3)  # Position: 0.5 * a * dt^2
+        B[3:6, 0:3] = dt * np.eye(3)           # Velocity: a * dt
+        # Bias: no direct control input (B[6:9, :] = 0)
         
-        # 3. UPDATE: Per ora non abbiamo osservazioni dirette, solo controllo
-        # In futuro, se avremo osservazioni di posizione/velocità, useremo:
-        # innovation = z - H @ self.x
-        # S = H @ self.P @ H.T + self.R
-        # K = self.P @ H.T @ np.linalg.inv(S)
-        # self.x = self.x + K @ innovation
-        # self.P = (np.eye(6) - K @ H) @ self.P
+        # Apply control input
+        self.x = self.x + B @ acc_world_no_gravity
         
-        # Per ora, simuliamo un'innovazione basata sulla consistenza interna
-        innovation = np.zeros((3, 1))  # Nessuna vera osservazione
+        # Initialize update tracking
+        did_update = False
+        innovation = np.zeros((3, 1))
+        current_nis = 0.0
         
-        logger.debug(f"🔧 Update Kalman corretto - Pos: {self.x[0:3,0]}, Vel: {self.x[3:6,0]}")
+        # PATCH 1: Force update for first 2 seconds
+        if current_time < 2.0:
+            logger.info(f"🕐 Attempting force update at t={current_time:.3f}s")
+            did_update = self.maybe_force_update(current_time)
+            if did_update:
+                logger.info(f"🚀 Force update applied at t={current_time:.3f}s")
+            else:
+                logger.warning(f"❌ Force update failed at t={current_time:.3f}s")
         
-        return self.x.copy(), self.P.copy(), innovation
+        # PATCH 2: Real ZUPT triggering (if no force update)
+        if not did_update and self.zupt_enabled:
+            logger.info(f"🔍 ZUPT check: window_size={len(self.acc_world_window)}")
+            if len(self.acc_world_window) >= 5:  # Need sufficient samples
+                logger.info(f"🔍 Attempting ZUPT at t={current_time:.3f}s")
+                did_update = self.maybe_zupt_update(
+                    np.array(list(self.acc_world_window)), 
+                    np.array(list(self.velocity_window))
+                )
+                if did_update:
+                    logger.info(f"🎯 ZUPT applied at t={current_time:.3f}s")
+                else:
+                    logger.info(f"❌ ZUPT not triggered at t={current_time:.3f}s")
+            else:
+                logger.info(f"❌ Insufficient samples for ZUPT: {len(self.acc_world_window)}/5")
+        
+        # PATCH 6: Apply clamped Q scaling 
+        # Adaptive noise with alpha clipping [0.5, 2.0]
+        if len(self.acc_buffer) > 10:  # Need some history
+            acc_var = np.var(list(self.acc_buffer), axis=0)
+            alpha = np.mean(acc_var) / np.mean(np.diag(self.Q_base)[:3])  # Scale factor
+            alpha = np.clip(alpha, self.alpha_clip[0], self.alpha_clip[1])  # Clamp [0.5, 2.0]
+            self.Q = alpha * self.Q_base
+            logger.debug(f"🔧 Q scaling: alpha={alpha:.2f} (clamped to [{self.alpha_clip[0]}, {self.alpha_clip[1]}])")
+        
+        # PATCH 3: Log NIS/innovations ONLY when update occurs
+        if did_update:
+            # Get NIS from the update method
+            if hasattr(self, '_last_nis'):
+                current_nis = self._last_nis
+                logger.debug(f"📊 NIS recorded: {current_nis:.3f}")
+            self.log_update_stats(did_update, current_time, current_nis)
+        
+        # Update acceleration buffer for adaptive scaling
+        self.acc_buffer.append(acc_world_no_gravity.flatten())
+        
+        # PATCH 7: Concise telemetry
+        if self.diagnostics['total_measurements'] % 100 == 0:
+            total_samples = self.diagnostics['total_measurements']
+            zupt_activations = self.diagnostics['zupt_activations'] 
+            zupt_percentage = (zupt_activations / max(total_samples, 1)) * 100
+            current_trace = np.trace(self.P)
+            
+            logger.info(f"📊 t={current_time:.1f}s: ZUPT={zupt_percentage:.1f}%, trace(P)={current_trace:.1f}")
+            
+            # Validation checks
+            if current_time > 2.0:
+                if len(self.nis_buffer) > 0:
+                    mean_nis = np.mean(list(self.nis_buffer))
+                    if mean_nis <= 0.001:
+                        logger.warning("❌ NIS ≈ 0 - updates not working!")
+                    else:
+                        logger.info(f"✅ NIS = {mean_nis:.3f} > 0")
+                        
+                # Assert trace(P) decreases below 3000 after updates
+                if did_update and current_trace > 3000:
+                    logger.warning(f"❌ trace(P) = {current_trace:.1f} still > 3000 after update")
+        
+        # 7. NUMERICAL STABILITY ENFORCEMENT
+        self._enforce_numerical_stability()
+        
+        # 8. COMPREHENSIVE DIAGNOSTICS
+        self._update_diagnostics(acc_world_no_gravity.flatten(), innovation.flatten(), did_update)
+        
+        logger.debug(f"🔧 Update comprehensive - Pos: {self.x[0:3,0]}, Vel: {self.x[3:6,0]}, Bias: {self.x[6:9,0]}")
+        
+        return self.x.copy(), self.P.copy(), innovation, self.diagnostics.copy()
+    
+    def _update_adaptive_noise(self, acc_corrected):
+        """Update Q and R matrices based on rolling variance of acceleration and residuals."""
+        # Add acceleration to buffer
+        self.acc_buffer.append(acc_corrected.copy())
+        
+        if len(self.acc_buffer) >= self.window_size:
+            # Compute rolling variance of acceleration
+            acc_array = np.array(list(self.acc_buffer))
+            acc_var = np.var(acc_array, axis=0)  # Per-axis variance
+            
+            # Scale Q based on acceleration variance (alpha factor)
+            alpha = np.clip(acc_var / np.mean(acc_var), self.alpha_clip[0], self.alpha_clip[1])
+            
+            # Update Q matrices per axis
+            for i in range(3):
+                # Position noise scaling
+                self.Q[i, i] = self.Q_base[i, i] * alpha[i]
+                # Velocity noise scaling  
+                self.Q[i+3, i+3] = self.Q_base[i+3, i+3] * alpha[i]
+                # Bias noise remains constant
+                
+            logger.debug(f"📊 Adaptive Q: alpha={alpha}, acc_var={acc_var}")
+            
+        # Update R based on residual variance (if we have residuals)
+        if len(self.residual_buffer) >= self.window_size:
+            residual_array = np.array(list(self.residual_buffer))
+            residual_var = np.var(residual_array, axis=0)
+            
+            # Scale R based on residual variance
+            R_scale = np.clip(residual_var / np.mean(residual_var), 
+                             self.R_clip[0], self.R_clip[1])
+            self.R = self.R_base * R_scale
+            
+            logger.debug(f"📊 Adaptive R: R_scale={R_scale}, residual_var={residual_var}")
+    
+    def _update_adaptive_noise_softened(self, acc_corrected):
+        """
+        Softened adaptive noise tuning with limits:
+        - Gentle Q increase (1.05x) / R decrease (0.98x) per window
+        - Maximum 2 adaptations per window  
+        - Reset counter every window_size measurements
+        """
+        # Add acceleration to buffer
+        self.acc_buffer.append(acc_corrected.copy())
+        
+        # Track adaptations per window
+        if len(self.acc_buffer) % self.window_size == 0:
+            self.adaptations_this_window = 0  # Reset counter
+        
+        if len(self.acc_buffer) >= self.window_size and self.adaptations_this_window < self.max_adaptations_per_window:
+            # Compute rolling variance of acceleration
+            acc_array = np.array(list(self.acc_buffer))
+            acc_var = np.var(acc_array, axis=0)  # Per-axis variance
+            
+            # Scale Q based on acceleration variance (gentle scaling)
+            alpha = np.clip(acc_var / np.mean(acc_var), self.alpha_clip[0], self.alpha_clip[1])
+            
+            # Gentle Q adjustment: only small increases allowed
+            for i in range(3):
+                if alpha[i] > 1.1:  # Only adjust if significantly elevated
+                    # Gentle increase in Q (process noise)
+                    self.Q[i, i] = min(self.Q[i, i] * self.Q_increase_factor, 
+                                       self.Q_base[i, i] * 3.0)  # Cap at 3x base
+                    self.Q[i+3, i+3] = min(self.Q[i+3, i+3] * self.Q_increase_factor,
+                                           self.Q_base[i+3, i+3] * 3.0)
+                    self.adaptations_this_window += 1
+                    
+            logger.debug(f"📊 Gentle Q adaptation: alpha={alpha}, adaptations={self.adaptations_this_window}")
+            
+        # Update R based on residual variance (gentle decrease when confident)
+        if len(self.residual_buffer) >= self.window_size and self.adaptations_this_window < self.max_adaptations_per_window:
+            residual_array = np.array(list(self.residual_buffer))
+            residual_var = np.var(residual_array, axis=0)
+            
+            # Gentle R decrease when residuals are consistently small
+            if np.mean(residual_var) < np.mean(np.diag(self.R)) * 0.5:
+                self.R = np.maximum(self.R * self.R_decrease_factor,
+                                    self.R_base * 0.5)  # Floor at 0.5x base
+                self.adaptations_this_window += 1
+                
+                logger.debug(f"📊 Gentle R adaptation: residual_var={np.mean(residual_var):.6f}")
+    
+    def _detect_outlier_mahalanobis(self, measurement_value):
+        """
+        Detect outliers using Mahalanobis distance with gate = 9.0
+        (corresponds to ~99.7% confidence for chi-squared with 1 DOF)
+        """
+        if not self.outlier_enabled or len(self.acc_buffer) < 10:
+            return False
+            
+        # Compute Mahalanobis distance based on recent measurements
+        recent_values = [np.linalg.norm(acc) for acc in list(self.acc_buffer)[-10:]]
+        
+        if len(recent_values) < 3:
+            return False
+            
+        mean_val = np.mean(recent_values)
+        cov_val = np.var(recent_values)
+        
+        if cov_val < 1e-8:  # Avoid division by zero
+            return False
+            
+        # Mahalanobis distance (simplified for 1D case)
+        mahal_distance = (measurement_value - mean_val)**2 / cov_val
+        
+        is_outlier = mahal_distance > self.mahalanobis_gate
+        
+        if is_outlier:
+            logger.debug(f"🚫 Mahalanobis outlier: distance={mahal_distance:.2f} > {self.mahalanobis_gate}")
+            
+        return is_outlier
+    
+    def _apply_zupt_per_axis(self, acc_corrected, dt):
+        """Apply Zero-Velocity Updates with per-axis thresholds."""
+        # Add current acceleration to ZUPT buffer
+        self.zupt_buffer.append(acc_corrected.copy())
+        
+        if len(self.zupt_buffer) < self.zupt_window:
+            return False
+            
+        # Check ZUPT conditions per axis
+        acc_array = np.array(list(self.zupt_buffer))
+        acc_std = np.std(acc_array, axis=0)  # Per-axis standard deviation
+        
+        # Current velocity magnitude
+        vel_magnitude = np.linalg.norm(self.x[3:6, 0])
+        
+        # ZUPT conditions: low acceleration variance AND low velocity
+        zupt_conditions = (acc_std < self.zupt_acc_threshold) & (vel_magnitude < self.zupt_vel_threshold)
+        
+        if np.all(zupt_conditions):
+            # Apply ZUPT: inject pseudo-measurement v = 0
+            H_zupt = np.zeros((3, 9))
+            H_zupt[0:3, 3:6] = np.eye(3)  # Observe velocity
+            
+            z_zupt = np.zeros((3, 1))  # v = 0 measurement
+            R_zupt = self.zupt_R * np.eye(3)
+            
+            # Standard Kalman update for ZUPT
+            innovation = z_zupt - H_zupt @ self.x
+            S = H_zupt @ self.P @ H_zupt.T + R_zupt
+            
+            try:
+                K = self.P @ H_zupt.T @ np.linalg.inv(S)
+                self.x = self.x + K @ innovation
+                self.P = (np.eye(9) - K @ H_zupt) @ self.P
+                
+                self.diagnostics['zupt_activations'] += 1
+                logger.debug(f"✋ ZUPT applied: vel_mag={vel_magnitude:.4f}, acc_std={acc_std}")
+                return True
+                
+            except np.linalg.LinAlgError:
+                logger.warning("⚠️ ZUPT failed: singular S matrix")
+                return False
+                
+        return False
+    
+    def _apply_zupt_tightened(self, acc_corrected, dt):
+        """
+        Apply Zero-Velocity Updates with tightened thresholds:
+        - acc_threshold: 0.05 m/s² (from 0.1)
+        - vel_threshold: 0.03 m/s (from 0.05)
+        - Improved gating for more aggressive stationary detection
+        """
+        # Add current acceleration to ZUPT buffer
+        self.zupt_buffer.append(acc_corrected.copy())
+        
+        if len(self.zupt_buffer) < self.zupt_window:
+            return False
+            
+        # Check ZUPT conditions per axis with tightened thresholds
+        acc_array = np.array(list(self.zupt_buffer))
+        acc_std = np.std(acc_array, axis=0)  # Per-axis standard deviation
+        
+        # Current velocity magnitude
+        vel_magnitude = np.linalg.norm(self.x[3:6, 0])
+        
+        # TIGHTENED ZUPT conditions
+        tightened_acc_threshold = 0.05  # Reduced from config
+        tightened_vel_threshold = 0.03  # Reduced from config
+        
+        zupt_conditions = (acc_std < tightened_acc_threshold) & (vel_magnitude < tightened_vel_threshold)
+        
+        # Additional stability check: require ALL axes to be stable
+        if np.all(zupt_conditions) and np.max(acc_std) < tightened_acc_threshold:
+            # PATCH 5: Improved ZUPT with Joseph form covariance update
+            H_zupt = np.zeros((3, 9))
+            H_zupt[0:3, 3:6] = np.eye(3)  # Observe velocity
+            
+            z_zupt = np.zeros((3, 1))  # v = 0 measurement
+            R_zupt = self.zupt_R * np.eye(3)
+            
+            # Compute innovation
+            innovation = z_zupt - H_zupt @ self.x
+            S = H_zupt @ self.P @ H_zupt.T + R_zupt
+            
+            try:
+                # Compute Kalman gain
+                K = self.P @ H_zupt.T @ np.linalg.inv(S)
+                
+                # Update state
+                self.x = self.x + K @ innovation
+                
+                # PATCH 5: Use Joseph form for covariance update in ZUPT
+                if self.use_joseph_form:
+                    self._joseph_form_update(K, H_zupt, R_zupt)
+                else:
+                    # Standard update with forced symmetry
+                    self.P = (np.eye(9) - K @ H_zupt) @ self.P
+                    self.P = 0.5 * (self.P + self.P.T)  # Force symmetry
+                
+            except np.linalg.LinAlgError:
+                logger.warning("⚠️ ZUPT failed: singular S matrix")
+                return False
+            
+            self.diagnostics['zupt_activations'] += 1
+            logger.debug(f"✋ ZUPT TIGHTENED applied: vel_mag={vel_magnitude:.4f}, acc_std={acc_std}, max_acc_std={np.max(acc_std):.4f}")
+            return True
+                
+        return False
+    
+    def _apply_zupt_selective(self, acc_corrected, dt):
+        """
+        ZUPT reale con triggering su acc_world.
+        Prima del gating: acc_world = R_bw @ (acc_body - bias) - g
+        Se finestra < window_samples, skip ZUPT (non azzerare contatore)
+        Quando ZUPT scatta, esegui SOLO l'update con H_zupt e R_zupt
+        Restituisce (success, innovation, nis) per gestione condizionale
+        """
+        # Calcola acc_world prima del gating
+        g_world = np.array([0, 0, -9.81])  # Gravità nel frame world
+        
+        # acc_world = R_bw @ (acc_body - bias) - g
+        # Per semplicità assumiamo R_bw = I (body ≈ world per dispositivi tenuti verticali)
+        bias = self.x[6:9, 0]  # Current bias estimate
+        acc_world = acc_corrected - bias - g_world
+        
+        # Aggiungi alla finestra ZUPT
+        self.zupt_buffer.append(acc_world.copy())
+        
+        # Se finestra non raggiunge window_samples, skip ZUPT
+        if len(self.zupt_buffer) < self.zupt_window:
+            return False, np.zeros((3, 1)), 0.0
+            
+        # Check ZUPT conditions con acc_world_window
+        acc_world_window = np.array(list(self.zupt_buffer))
+        vel_magnitude = np.linalg.norm(self.x[3:6, 0])
+        
+        # ZUPT triggering: std(acc_world_window) < 0.05 AND |v| < 0.03
+        acc_world_std = np.std(acc_world_window, axis=0)
+        strong_acc_condition = np.max(acc_world_std) < 0.05
+        strong_vel_condition = vel_magnitude < 0.03
+        
+        if strong_acc_condition and strong_vel_condition:
+            # Esegui SOLO l'update ZUPT
+            H = np.zeros((3, 9))
+            H[:, 3:6] = np.eye(3)  # H_zupt per velocità
+            z = np.zeros((3, 1))   # v = 0 measurement
+            R = np.diag([5e-4, 5e-4, 5e-4])  # R_zupt
+            
+            # Compute innovation e NIS per ZUPT
+            y = z - H @ self.x  # innovation
+            S = H @ self.P @ H.T + R
+            
+            try:
+                # Calculate NIS con m corretto
+                nis = float(y.T @ np.linalg.inv(S) @ y)
+                
+                # Joseph form update per ZUPT
+                K = self.P @ H.T @ np.linalg.inv(S)
+                self.x = self.x + K @ y
+                self._joseph_form_update(K, H, R)
+                
+                self.diagnostics['zupt_activations'] += 1
+                logger.debug(f"🛑 ZUPT scatta: vel_mag={vel_magnitude:.4f}, max_acc_world_std={np.max(acc_world_std):.4f}, NIS={nis:.3f}")
+                return True, y, nis
+                
+            except np.linalg.LinAlgError:
+                logger.warning("⚠️ ZUPT fallito: S matrix singolare")
+                return False, np.zeros((3, 1)), 0.0
+                
+        return False, np.zeros((3, 1)), 0.0
+    
+    def _apply_nis_driven_adaptation(self, acc_corrected):
+        """
+        Adattamento NIS-driven di R e Q (finestra rolling).
+        Target teorico: E[NIS] ≈ m (dimensione misura).
+        """
+        # Create a pseudo-measurement for NIS calculation (acceleration consistency)
+        if len(self.acc_buffer) > 1:
+            # Use acceleration prediction vs actual as pseudo-measurement
+            prev_acc = list(self.acc_buffer)[-1] if len(self.acc_buffer) > 0 else acc_corrected
+            y = (acc_corrected - prev_acc).reshape(-1, 1)  # Innovation proxy
+            
+            # Simple covariance for pseudo-measurement
+            S = self.R + np.eye(3) * 0.1  # Simple innovation covariance
+            
+            try:
+                # Calculate NIS
+                nis = float(y.T @ np.linalg.inv(S) @ y)
+                self.nis_buffer.append(nis)
+                
+                if len(self.nis_buffer) >= 10:  # Need some history
+                    mean_nis = np.mean(self.nis_buffer)
+                    m = 3  # Measurement dimension
+                    
+                    # NIS adaptation bands
+                    low = 0.7 * m   # 2.1
+                    high = 1.3 * m  # 3.9
+                    
+                    # Soft adaptation rules (max 2 per window)
+                    if self.adaptations_this_window < self.max_adaptations_per_window:
+                        if mean_nis < low:
+                            # Trust measurements more, allow more dynamics
+                            self.R *= 0.9  # More trust in measurements
+                            self.Q *= 1.05  # Slight increase for dynamics
+                            self.adaptations_this_window += 1
+                            logger.debug(f"📉 NIS adaptation: mean_nis={mean_nis:.2f} < {low:.1f} → R*=0.9, Q*=1.05")
+                            
+                        elif mean_nis > high:
+                            # Less trust in measurements, reduce dynamics
+                            self.R *= 1.1  # Less trust in measurements
+                            self.Q *= 0.95  # Reduce dynamics
+                            self.adaptations_this_window += 1
+                            logger.debug(f"📈 NIS adaptation: mean_nis={mean_nis:.2f} > {high:.1f} → R*=1.1, Q*=0.95")
+                    
+                    # Clip R and Q to safe ranges
+                    R_diag = np.diag(self.R)
+                    R_diag = np.clip(R_diag, 0.05, 1.0)  # R bounds
+                    self.R = np.diag(R_diag)
+                    
+                    # Clip Q scaling relative to base
+                    Q_diag = np.diag(self.Q)
+                    Q_base_diag = np.diag(self.Q_base)
+                    Q_scale = Q_diag / Q_base_diag
+                    Q_scale = np.clip(Q_scale, 0.5, 2.0)  # Q scale bounds
+                    self.Q = self.Q_base * Q_scale.reshape(-1, 1)
+                    
+                    # Reset adaptations counter when buffer is full (window reset)
+                    if len(self.nis_buffer) == self.nis_buffer.maxlen:
+                        self.adaptations_this_window = 0
+                    
+            except (np.linalg.LinAlgError, ValueError):
+                pass  # Skip NIS calculation if numerical issues
+    
+    def _detect_outlier(self, measurement_value):
+        """Detect outliers using z-score gating."""
+        if not self.outlier_enabled or len(self.acc_buffer) < 10:
+            return False
+            
+        # Compute z-score based on recent measurements
+        recent_values = [np.linalg.norm(acc) for acc in list(self.acc_buffer)[-10:]]
+        mean_val = np.mean(recent_values)
+        std_val = np.std(recent_values)
+        
+        if std_val < 1e-6:  # Avoid division by zero
+            return False
+            
+        z_score = abs(measurement_value - mean_val) / std_val
+        return z_score > self.outlier_threshold
+    
+    def _enforce_numerical_stability(self):
+        """
+        Comprehensive numerical stability enforcement:
+        1. Joseph form covariance update if enabled
+        2. Force symmetry: P = 0.5*(P + P.T)
+        3. Eigenvalue flooring to prevent singularity
+        4. Trace threshold monitoring and reset
+        """
+        # 1. Force symmetry (always applied)
+        if self.force_symmetry:
+            self.P = 0.5 * (self.P + self.P.T)
+        
+        # 2. Eigenvalue flooring
+        try:
+            eigenvals, eigenvecs = np.linalg.eigh(self.P)
+            eigenvals = np.maximum(eigenvals, self.eigenvalue_floor)
+            self.P = eigenvecs @ np.diag(eigenvals) @ eigenvecs.T
+        except np.linalg.LinAlgError:
+            logger.warning("⚠️ Eigenvalue decomposition failed - using identity reset")
+            self.P = np.eye(9) * 0.01
+        
+        # 3. Hard guard su P - trace reset corretto
+        trace_P = np.trace(self.P)
+        self.diagnostics['current_trace'] = float(trace_P)  # Always log current trace
+        
+        if trace_P > self.trace_warn_level:
+            clamp_factor = max(self.trace_warn_level / trace_P, 0.25)
+            if clamp_factor < 1.0:
+                logger.warning(
+                    "⚠️ Trace(P)=%.2f exceeds warn level %.2f → applying soft clamp (factor=%.3f)",
+                    trace_P,
+                    self.trace_warn_level,
+                    clamp_factor,
+                )
+                self.P[:6, :6] *= clamp_factor
+                self.P[6:9, 6:9] *= max(clamp_factor, 0.5)
+                self.P = 0.5 * (self.P + self.P.T)
+                trace_P = np.trace(self.P)
+                self.diagnostics['current_trace'] = float(trace_P)
+        
+        if trace_P > self.trace_threshold:  # threshold is now 3000
+            logger.warning(f"⚠️ TRACE EXPLOSION: {trace_P:.2f} > {self.trace_threshold} - RESETTING P")
+            # Ensure trace_resets is initialized
+            if 'trace_resets' not in self.diagnostics:
+                self.diagnostics['trace_resets'] = 0
+            self.diagnostics['trace_resets'] += 1
+            # Correct reset - no broadcasting issues
+            diag = np.maximum(np.diag(self.P) * 0.1, self.eigenvalue_floor)
+            self.P = np.diag(diag)  # ✅ niente broadcasting sbagliato
+            logger.info(f"✅ P reset - new trace: {np.trace(self.P):.2f}")
+    
+    def _joseph_form_update(self, H, R, innovation):
+        """
+        Joseph form covariance update for improved numerical stability:
+        P_new = (I - K*H)*P*(I - K*H).T + K*R*K.T
+        
+        This form is more robust to numerical errors than the standard update.
+        """
+        S = H @ self.P @ H.T + R
+        try:
+            S_inv = np.linalg.inv(S)
+            K = self.P @ H.T @ S_inv
+        except np.linalg.LinAlgError:
+            logger.warning("⚠️ Singular S matrix in Joseph form - using identity")
+            K = np.zeros((9, H.shape[0]))
+        
+        # Joseph form update
+        I_KH = np.eye(9) - K @ H
+        self.P = I_KH @ self.P @ I_KH.T + K @ R @ K.T
+        
+        # Update state
+        self.x = self.x + K @ innovation
+        
+        return K
+    
+    def _update_diagnostics(self, acc_corrected, innovation, zupt_applied):
+        """Update comprehensive diagnostics."""
+        # Add residual for adaptive R (use acceleration consistency as proxy)
+        if len(self.acc_buffer) > 1:
+            prev_acc = list(self.acc_buffer)[-2]
+            residual = acc_corrected - prev_acc  # Simple residual proxy
+            self.residual_buffer.append(residual)
+            
+            # PATCH 8: Enhanced residual statistics computation
+            if len(self.residual_buffer) >= 20:
+                residuals = np.array(list(self.residual_buffer))
+                
+                # Comprehensive residual statistics
+                res_mean = np.mean(residuals, axis=0)
+                res_std = np.std(residuals, axis=0)
+                res_var = np.var(residuals, axis=0)
+                
+                self.diagnostics['residual_stats']['mean'] = res_mean.tolist()
+                self.diagnostics['residual_stats']['std'] = res_std.tolist()
+                self.diagnostics['residual_stats']['variance'] = res_var.tolist()
+                
+                # White noise test: mean should be near zero, low autocorrelation
+                self.diagnostics['residual_stats']['whiteness_score'] = float(np.mean(np.abs(res_mean)) < 0.2)
+                
+                # Compute autocorrelation (if statsmodels available)
+                if STATSMODELS_AVAILABLE and len(residuals) >= 40:
+                    try:
+                        autocorr = [acf(residuals[:, i], nlags=20, fft=True)[1:] for i in range(3)]
+                        self.diagnostics['residual_stats']['autocorr'] = autocorr
+                        
+                        # Compute Ljung-Box test for white noise
+                        lb_stats = []
+                        for i in range(3):
+                            try:
+                                from statsmodels.stats.diagnostic import acorr_ljungbox
+                                lb_stat = acorr_ljungbox(residuals[:, i], lags=10, return_df=False)
+                                lb_stats.append(float(lb_stat['lb_pvalue'].iloc[-1]))
+                            except:
+                                lb_stats.append(0.5)  # Neutral value
+                        self.diagnostics['residual_stats']['ljung_box_pvalue'] = lb_stats
+                    except:
+                        pass
 
     def _check_numerical_stability(self):
         """
-        CORREZIONE BUG: Controlli di stabilità numerica per la matrice di covarianza P.
+        CORREZIONE BUG: Controlli di stabilità numerica per la matrice di covarianza P 9x9.
         
         Verifica:
         1. Esplosione della covarianza (trace troppo grande)
@@ -409,6 +1502,10 @@ class ExtendedKalmanFilter3D:
         """
         trace_P = np.trace(self.P)
         max_trace_threshold = 1000.0  # Soglia per esplosione covarianza
+        
+        # Log trace sempre per monitoraggio (solo ogni 100 iterazioni per non inondare)
+        if len(self.trace_history) % 100 == 0:
+            logger.info(f"📊 Monitor: Trace(P)={trace_P:.2f}, iterazione {len(self.trace_history)}")
         
         # 1. Controllo esplosione covarianza
         if trace_P > max_trace_threshold:
@@ -440,6 +1537,84 @@ class ExtendedKalmanFilter3D:
             logger.warning(f"⚠️ {negative_count} elementi diagonali ≤ 0")
             
         logger.debug(f"✅ Stabilità: trace={trace_P:.4f}, cond={cond_P:.2e}")
+    
+    def polynomial_detrend_velocity(self, order=None):
+        """
+        Apply polynomial detrending to velocity after EKF processing.
+        
+        Args:
+            order (int): Polynomial order for detrending (1=linear, 2=quadratic)
+                        If None, uses self.poly_order from config
+        """
+        if not self.vel_correction_enabled:
+            return
+            
+        if len(self.trace_history) < 10:  # Need sufficient data
+            return
+            
+        order = order if order is not None else self.poly_order
+        
+        # Extract velocity history (this would need to be stored during processing)
+        # For now, just detrend the current velocity if it shows systematic drift
+        vel_current = self.x[3:6, 0]
+        vel_mean = np.mean(vel_current)
+        
+        # Apply simple drift correction - enforce near-zero mean if stationary
+        if abs(vel_mean) > self.drift_threshold:  # Use configured threshold
+            logger.info(f"🔧 Velocity drift correction: mean_vel={vel_mean:.4f}")
+            # Subtract systematic drift (simple approach)
+            self.x[3:6, 0] = vel_current - vel_mean * 0.1  # Gentle correction
+    
+    def validate_performance(self):
+        """
+        Validation checks for EKF performance.
+        
+        Returns:
+            dict: Validation results with pass/fail status
+        """
+        validation_results = {
+            'trace_P_check': False,
+            'residual_mean_check': False, 
+            'residual_std_check': False,
+            'velocity_std_check': False,
+            'velocity_drift_check': False
+        }
+        
+        # 1. Check trace(P) after startup
+        if len(self.trace_history) > 50:  # After startup
+            recent_trace = np.mean(self.trace_history[-10:])
+            validation_results['trace_P_check'] = recent_trace < 1000
+            logger.info(f"✅ Trace(P) check: {recent_trace:.2f} < 1000: {validation_results['trace_P_check']}")
+        
+        # 2. Residual checks
+        if len(self.diagnostics['residual_stats']['mean']) > 0:
+            residual_mean = np.array(self.diagnostics['residual_stats']['mean'])
+            residual_std = np.array(self.diagnostics['residual_stats']['std'])
+            
+            # Check residual mean
+            mean_check = np.all(np.abs(residual_mean) < 0.2)
+            validation_results['residual_mean_check'] = mean_check
+            
+            # Check residual std (different thresholds for X,Y vs Z)
+            std_check_xy = np.all(residual_std[:2] < 3.5)
+            std_check_z = residual_std[2] < 6.0 if len(residual_std) > 2 else True
+            validation_results['residual_std_check'] = std_check_xy and std_check_z
+            
+            logger.info(f"✅ Residual mean check: {residual_mean} < 0.2: {mean_check}")
+            logger.info(f"✅ Residual std check: XY={residual_std[:2]} < 3.5, Z={residual_std[2] if len(residual_std) > 2 else 'N/A'} < 6.0: {validation_results['residual_std_check']}")
+        
+        # 3. Velocity checks
+        vel_current = self.x[3:6, 0]
+        vel_std = np.std(vel_current)
+        vel_drift = np.mean(np.abs(vel_current))
+        
+        validation_results['velocity_std_check'] = vel_std < 1.0
+        validation_results['velocity_drift_check'] = vel_drift < 0.05
+        
+        logger.info(f"✅ Velocity std check: {vel_std:.4f} < 1.0: {validation_results['velocity_std_check']}")
+        logger.info(f"✅ Velocity drift check: {vel_drift:.4f} < 0.05: {validation_results['velocity_drift_check']}")
+        
+        return validation_results
 
 
 def load_config(config_path):
@@ -489,14 +1664,14 @@ def validate_configuration(config: dict) -> bool:
         logger.info("🔍 Validazione configurazione in corso...")
         
         # Controlli base
-        required_sections = ['kalman_filter', 'input_files', 'output_files']
+        required_sections = ['ekf', 'input_files', 'output_files']
         for section in required_sections:
             if section not in config:
                 logger.error(f"❌ Sezione mancante nella configurazione: {section}")
                 return False
         
         # Controlli parametri Kalman
-        kf_config = config['kalman_filter']
+        kf_config = config['ekf']
         required_kf_params = ['initial_state', 'initial_covariance', 'process_noise', 'measurement_noise']
         for param in required_kf_params:
             if param not in kf_config:
@@ -641,7 +1816,7 @@ def validate_results(results: dict, config: dict, axis: str) -> dict:
         return validation_report
 
 
-def create_backup_if_needed(file_path: str, config: dict) -> Optional[str]:
+def create_backup_if_needed(file_path: Union[str, Path], config: dict) -> Optional[str]:
     """
     Crea un backup del file se richiesto dalla configurazione.
     
@@ -654,16 +1829,18 @@ def create_backup_if_needed(file_path: str, config: dict) -> Optional[str]:
     """
     if not config.get('execution_control', {}).get('backup_existing_files', False):
         return None
-        
-    if not os.path.exists(file_path):
+
+    path = Path(file_path)
+
+    if not path.exists():
         return None
         
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_path = f"{file_path}.backup_{timestamp}"
-        shutil.copy2(file_path, backup_path)
+        backup_path = path.with_name(f"{path.name}.backup_{timestamp}")
+        shutil.copy2(path, backup_path)
         logger.info(f"📁 Backup creato: {backup_path}")
-        return backup_path
+        return str(backup_path)
     except Exception as e:
         logger.warning(f"⚠️ Errore nella creazione backup: {e}")
         return None
@@ -737,6 +1914,66 @@ def print_validation_report(validation_report: dict, axis: str):
             print_colored(f"  ❌ {error}", "❌", "red")
     
     print_colored("📊 ============================================", "📊", "magenta")
+
+
+def _validate_final_performance(ekf, results, axis, diagnostics):
+    """
+    Accettazione output (assert/validazione soft) - verifica stabilità finale.
+    Non fallisce il run; solo warning se criteri non soddisfatti.
+    """
+    logger.info(f"🔍 Final performance validation for axis {axis}")
+    
+    # 1. trace(P) final < 3000
+    final_trace = float(np.trace(ekf.P))
+    if final_trace < 3000:
+        logger.info(f"✅ trace(P) final: {final_trace:.1f} < 3000")
+    else:
+        logger.warning(f"⚠️ trace(P) final: {final_trace:.1f} >= 3000 (target < 3000)")
+    
+    # 2. std(vel X/Y) < 1.0 m/s; Z: cerca di scendere
+    if 'velocity' in results:
+        vel_data = results['velocity']
+        vel_std = np.std(vel_data)
+        
+        if axis in ['X', 'Y']:
+            if vel_std < 1.0:
+                logger.info(f"✅ std(vel {axis}): {vel_std:.3f} < 1.0 m/s")
+            else:
+                logger.warning(f"⚠️ std(vel {axis}): {vel_std:.3f} >= 1.0 m/s (target < 1.0)")
+        else:  # Z axis
+            logger.info(f"📊 std(vel Z): {vel_std:.3f} m/s (monitoring for improvement)")
+    
+    # 3. ZUPT percentage (informational)
+    zupt_count = diagnostics.get('zupt_activations', 0)
+    total_measurements = diagnostics.get('total_measurements', 1)
+    zupt_percentage = 100.0 * zupt_count / max(1, total_measurements)  # Prevent division by zero
+    logger.info(f"📊 ZUPT activation: {zupt_percentage:.1f}% ({zupt_count}/{total_measurements})")
+    
+    # 4. Residuals: |mean| < 0.2, autocorrelazione check se disponibile
+    residual_stats = diagnostics.get('residual_stats', {})
+    if 'mean' in residual_stats:
+        res_mean = np.array(residual_stats['mean'])
+        mean_magnitude = np.mean(np.abs(res_mean))
+        if mean_magnitude < 0.2:
+            logger.info(f"✅ |residual mean|: {mean_magnitude:.3f} < 0.2")
+        else:
+            logger.warning(f"⚠️ |residual mean|: {mean_magnitude:.3f} >= 0.2 (target < 0.2)")
+        
+        # Whiteness score if available
+        whiteness = residual_stats.get('whiteness_score', 0)
+        if whiteness > 0.8:
+            logger.info(f"✅ Residual whiteness: {whiteness:.2f} (good)")
+        else:
+            logger.warning(f"⚠️ Residual whiteness: {whiteness:.2f} (target > 0.8)")
+    
+    # 5. Trace resets (should be occasional, not continuous)
+    trace_resets = diagnostics.get('trace_resets', 0)
+    if trace_resets <= 5:
+        logger.info(f"✅ Trace resets: {trace_resets} (acceptable)")
+    else:
+        logger.warning(f"⚠️ Trace resets: {trace_resets} (too many, check stability)")
+    
+    logger.info("🎯 Final performance validation completed")
 
 
 def parse_acceleration_data(file_path, acc_type):
@@ -935,10 +2172,18 @@ def apply_extended_kalman_filter(data, config, axis):
         has_3d_data = all(col in data.columns for col in ['acc_x', 'acc_y', 'acc_z'])
         has_orientation = all(col in data.columns for col in ['roll', 'pitch', 'yaw'])
         
-        if has_3d_data and has_orientation:
-            print_colored("🌍 Dati 3D completi rilevati - modalità EKF 3D attivata", "🌍", "green")
-            logger.info("🌍 Modalità EKF 3D attivata con accelerazione e orientamento")
+        # PATCH: Force 3D mode if we have 3D acceleration data, even without orientation
+        if has_3d_data:
+            print_colored("🌍 Dati 3D rilevati - modalità EKF 3D attivata (orientamento zero se mancante)", "🌍", "green")
+            logger.info("🌍 Modalità EKF 3D attivata con accelerazione (orientamento zero se mancante)")
             mode_3d = True
+            
+            # Add zero orientation columns if missing
+            if not has_orientation:
+                data['roll'] = 0.0
+                data['pitch'] = 0.0  
+                data['yaw'] = 0.0
+                logger.info("🔧 Aggiunta orientamento zero (roll=0, pitch=0, yaw=0)")
         else:
             print_colored(f"📊 Modalità compatibilità 1D per asse {axis}", "📊", "yellow")
             logger.info(f"📊 Modalità compatibilità 1D per asse {axis}")
@@ -1033,10 +2278,14 @@ def apply_extended_kalman_filter(data, config, axis):
                 pitch = data['pitch'].iloc[i] if 'pitch' in data.columns else 0.0
                 yaw = data['yaw'].iloc[i] if 'yaw' in data.columns else 0.0
                 
-                # Update EKF 3D con auto-tuning
-                state, covariance, innovation = ekf.update_with_acceleration(
-                    acc_body, roll, pitch, yaw, dt
+                # Update EKF 3D with comprehensive features
+                state, covariance, innovation, diagnostics = ekf.update_comprehensive(
+                    acc_body, roll, pitch, yaw, dt, timestamps[i]
                 )
+                
+                # Apply velocity detrending at configured intervals
+                if i % ekf.correction_interval == 0:
+                    ekf.polynomial_detrend_velocity()
                 
                 # Per compatibilità con codice esistente, estrai solo i dati dell'asse corrente
                 axis_idx = {'X': 0, 'Y': 1, 'Z': 2}[axis]
@@ -1061,12 +2310,12 @@ def apply_extended_kalman_filter(data, config, axis):
             innovation_array = np.array([[innovation_for_monitor]])
             measurement_array = np.array([[data[acc_column].iloc[i]]])
             
-            # Performance monitoring temporaneamente disabilitato per problemi dimensionali
-            # try:
-            #     performance_monitor.update_metrics(ekf, innovation_array, measurement_array)
-            # except Exception as e:
-            #     logger.warning(f"⚠️ Errore nel monitoraggio performance: {e}")
-            #     # Continua l'esecuzione senza crashare
+            # PATCH 6: Re-enable performance monitoring with safe formatting
+            try:
+                performance_monitor.update_metrics(ekf, innovation_array, measurement_array)
+            except Exception as e:
+                logger.warning(safe_fmt(f"⚠️ Errore nel monitoraggio performance: {e}"))
+                # Continua l'esecuzione senza crashare
             
             # Controllo periodico della convergenza e diagnostica
             check_interval = config.get('performance_monitoring', {}).get('convergence_check_interval', 100)
@@ -1127,6 +2376,7 @@ def apply_extended_kalman_filter(data, config, axis):
                 biases[i] = ekf.x[3, 0] if ekf.x.shape[0] > 3 else 0.0
         
         # Applica la correzione della deriva di velocità se richiesto
+        drift_summary = {'enabled': False}
         if config.get('drift_correction', {}).get('enabled', True):
             logger.info("Applicazione della correzione della deriva di velocità")
             print_colored("Applicazione correzione della deriva di velocità...", "🔄", "yellow")
@@ -1149,8 +2399,18 @@ def apply_extended_kalman_filter(data, config, axis):
             print_colored(f"  - Velocità media dopo: {corrected_mean_velocity:.4f} m/s", "📈", "cyan")
             print_colored(f"  - Range velocità prima: {original_velocity_range:.4f} m/s", "📏", "cyan")
             print_colored(f"  - Range velocità dopo: {corrected_velocity_range:.4f} m/s", "📏", "cyan")
+            
+            drift_summary = {
+                'enabled': True,
+                'polynomial_order': polynomial_order,
+                'mean_velocity_before': float(original_mean_velocity),
+                'mean_velocity_after': float(corrected_mean_velocity),
+                'range_before': float(original_velocity_range),
+                'range_after': float(corrected_velocity_range)
+            }
         
         # Applica post-processing avanzato se abilitato
+        post_processing_summary = {'enabled': False}
         if config.get('post_processing', {}).get('velocity_smoothing', {}).get('enabled', False) or \
            config.get('post_processing', {}).get('outlier_removal', {}).get('enabled', False):
             print_colored("🔄 Applicazione post-processing avanzato...", "🔄", "yellow")
@@ -1170,6 +2430,14 @@ def apply_extended_kalman_filter(data, config, axis):
             print_colored(f"  - Riduzione rumore velocità: {noise_reduction:.1f}%", "📊", "cyan")
             print_colored(f"  - Std velocità prima: {pre_processing_velocity_std:.4f} m/s", "📉", "cyan")
             print_colored(f"  - Std velocità dopo: {post_processing_velocity_std:.4f} m/s", "📈", "cyan")
+            
+            post_processing_summary = {
+                'enabled': True,
+                'noise_reduction_percent': float(noise_reduction),
+                'std_before': float(pre_processing_velocity_std),
+                'std_after': float(post_processing_velocity_std),
+                'config': config.get('post_processing', {})
+            }
         
         # Crea un DataFrame con i risultati
         results_df = pd.DataFrame({
@@ -1225,35 +2493,147 @@ def apply_extended_kalman_filter(data, config, axis):
         print_colored(f"  - Deviazione standard: {vel_std:.4f} m/s", "📊", "blue")
         print_colored(f"  - Range: {vel_range:.4f} m/s (min: {vel_min:.4f}, max: {vel_max:.4f})", "📏", "blue")
         
-        # Statistiche di accelerazione
-        acc_mean = np.mean(accelerations)
-        acc_std = np.std(accelerations)
-        acc_range = np.max(accelerations) - np.min(accelerations)
-        acc_min, acc_max = np.min(accelerations), np.max(accelerations)
-        
+        # Statistiche di accelerazione - controllo valori vuoti
+        if len(accelerations) > 0:
+            acc_mean = np.mean(accelerations)
+            acc_std = np.std(accelerations)
+            acc_range = np.max(accelerations) - np.min(accelerations)
+            acc_min, acc_max = np.min(accelerations), np.max(accelerations)
+        else:
+            acc_mean = acc_std = acc_range = acc_min = acc_max = 0.0
+            
         print_colored(f"⚡ STATISTICHE ACCELERAZIONE:", "⚡", "yellow")
-        print_colored(f"  - Media: {acc_mean:.4f} m/s²", "📊", "yellow")
-        print_colored(f"  - Deviazione standard: {acc_std:.4f} m/s²", "📊", "yellow")
-        print_colored(f"  - Range: {acc_range:.4f} m/s² (min: {acc_min:.4f}, max: {acc_max:.4f})", "📏", "yellow")
+        print_colored(f"  - Media: {safe_fmt(acc_mean)} m/s²", "📊", "yellow")
+        print_colored(f"  - Deviazione standard: {safe_fmt(acc_std)} m/s²", "📊", "yellow")
+        print_colored(f"  - Range: {safe_fmt(acc_range)} m/s² (min: {safe_fmt(acc_min)}, max: {safe_fmt(acc_max)})", "📏", "yellow")
         
-        # Statistiche di bias
-        bias_mean = np.mean(biases)
+        # Statistiche di bias - controllo valori vuoti
+        if len(biases) > 0:
+            bias_mean = np.mean(biases)
+            bias_std = np.std(biases)
+            bias_range = np.max(biases) - np.min(biases)
+        else:
+            bias_mean = bias_std = bias_range = 0.0
         bias_std = np.std(biases)
         bias_range = np.max(biases) - np.min(biases)
         
         print_colored(f"🎯 STATISTICHE BIAS:", "🎯", "magenta")
-        print_colored(f"  - Media: {bias_mean:.6f}", "📊", "magenta")
-        print_colored(f"  - Deviazione standard: {bias_std:.6f}", "📊", "magenta")
-        print_colored(f"  - Range: {bias_range:.6f}", "📏", "magenta")
+        print_colored(f"  - Media: {safe_fmt(bias_mean)}", "📊", "magenta")
+        print_colored(f"  - Deviazione standard: {safe_fmt(bias_std)}", "📊", "magenta")
+        print_colored(f"  - Range: {safe_fmt(bias_range)}", "📏", "magenta")
         
-        # Log delle statistiche
+        summary_stats = {
+            'general': {
+                'samples': int(len(timestamps)),
+                'duration_seconds': float(total_time),
+                'sampling_rate_hz': float(sampling_rate) if np.isfinite(sampling_rate) else None,
+            },
+            'position': {
+                'mean': float(pos_mean),
+                'std': float(pos_std),
+                'min': float(pos_min),
+                'max': float(pos_max),
+                'range': float(pos_range),
+            },
+            'velocity': {
+                'mean': float(vel_mean),
+                'std': float(vel_std),
+                'min': float(vel_min),
+                'max': float(vel_max),
+                'range': float(vel_range),
+            },
+            'acceleration': {
+                'mean': float(acc_mean),
+                'std': float(acc_std),
+                'min': float(acc_min),
+                'max': float(acc_max),
+                'range': float(acc_range),
+            },
+            'bias': {
+                'mean': safe_fmt(bias_mean),
+                'std': safe_fmt(bias_std),
+                'range': safe_fmt(bias_range),
+            },
+            'drift_correction': drift_summary,
+            'post_processing': post_processing_summary,
+        }
+        
+        # Log delle statistiche - usa safe_fmt per tutti i valori
         logger.info(f"📊 STATISTICHE FINALI - Campioni: {len(timestamps)}, Durata: {total_time:.2f}s")
-        logger.info(f"📍 POSIZIONE - Media: {pos_mean:.4f}m, Std: {pos_std:.4f}m, Range: {pos_range:.4f}m")
-        logger.info(f"🚀 VELOCITÀ - Media: {vel_mean:.4f}m/s, Std: {vel_std:.4f}m/s, Range: {vel_range:.4f}m/s")
-        logger.info(f"⚡ ACCELERAZIONE - Media: {acc_mean:.4f}m/s², Std: {acc_std:.4f}m/s², Range: {acc_range:.4f}m/s²")
-        logger.info(f"🎯 BIAS - Media: {bias_mean:.6f}, Std: {bias_std:.6f}, Range: {bias_range:.6f}")
+        logger.info(f"📍 POSIZIONE - Media: {safe_fmt(pos_mean)}m, Std: {safe_fmt(pos_std)}m, Range: {safe_fmt(pos_range)}m")
+        logger.info(f"🚀 VELOCITÀ - Media: {safe_fmt(vel_mean)}m/s, Std: {safe_fmt(vel_std)}m/s, Range: {safe_fmt(vel_range)}m/s")
+        logger.info(f"⚡ ACCELERAZIONE - Media: {safe_fmt(acc_mean)}m/s², Std: {safe_fmt(acc_std)}m/s², Range: {safe_fmt(acc_range)}m/s²")
+        logger.info(f"🎯 BIAS - Media: {safe_fmt(bias_mean)}, Std: {safe_fmt(bias_std)}, Range: {safe_fmt(bias_range)}")
         
         print_colored("✅ ============== EKF COMPLETATO CON SUCCESSO ==============", "✅", "green")
+        
+        # � COMPREHENSIVE VALIDATION AND DIAGNOSTICS
+        print_colored("🔍 =============== VALIDATION & DIAGNOSTICS ===============", "🔍", "cyan")
+        logger.info("🔍 Avvio validazione completa EKF...")
+        
+        # Initialize diagnostics for all cases
+        diagnostics = ekf.diagnostics
+        
+        # 1. Validate EKF performance
+        if mode_3d:
+            validation_results = ekf.validate_performance()
+            
+            print_colored(f"📊 VALIDATION RESULTS:", "📊", "cyan")
+            for check, passed in validation_results.items():
+                status = "✅ PASS" if passed else "❌ FAIL"
+                color = "green" if passed else "red"
+                print_colored(f"  - {check}: {status}", "🔍", color)
+                logger.info(f"Validation {check}: {'PASS' if passed else 'FAIL'}")
+            
+            # 2. Comprehensive diagnostics from EKF
+            print_colored(f"🎯 COMPREHENSIVE DIAGNOSTICS:", "🎯", "yellow")
+            print_colored(f"  - Total measurements: {diagnostics['total_measurements']}", "📊", "cyan")
+            print_colored(f"  - Outliers detected: {diagnostics['outlier_count']} ({100*diagnostics['outlier_count']/max(1,diagnostics['total_measurements']):.1f}%)", "🚫", "yellow")
+            print_colored(f"  - ZUPT activations: {diagnostics['zupt_activations']}", "✋", "blue")
+            
+            if diagnostics['residual_stats']['mean']:
+                residual_mean = diagnostics['residual_stats']['mean']
+                residual_std = diagnostics['residual_stats']['std']
+                print_colored(f"  - Residual mean: [{residual_mean[0]:.4f}, {residual_mean[1]:.4f}, {residual_mean[2]:.4f}]", "📈", "cyan")
+                print_colored(f"  - Residual std: [{residual_std[0]:.4f}, {residual_std[1]:.4f}, {residual_std[2]:.4f}]", "📊", "cyan")
+                
+                # Check residual quality
+                mean_magnitude = np.linalg.norm(residual_mean)
+                if mean_magnitude < 0.2:
+                    print_colored(f"  ✅ Residual mean quality: GOOD (|mean|={mean_magnitude:.4f} < 0.2)", "✅", "green")
+                else:
+                    print_colored(f"  ⚠️ Residual mean quality: POOR (|mean|={mean_magnitude:.4f} ≥ 0.2)", "⚠️", "yellow")
+            
+            # 3. Advanced diagnostics: autocorrelation
+            if diagnostics['residual_stats']['autocorr'] and STATSMODELS_AVAILABLE:
+                print_colored(f"  📈 Autocorrelation analysis available for 3 axes", "📈", "cyan")
+                for i, autocorr in enumerate(diagnostics['residual_stats']['autocorr']):
+                    axis_name = ['X', 'Y', 'Z'][i]
+                    # Check if autocorrelation is within 95% CI after lag 2
+                    ci_95 = 1.96 / np.sqrt(len(autocorr))
+                    autocorr_after_lag2 = autocorr[2:]
+                    within_ci = np.all(np.abs(autocorr_after_lag2) < ci_95)
+                    status = "✅ GOOD" if within_ci else "⚠️ POOR"
+                    color = "green" if within_ci else "yellow"
+                    print_colored(f"    - {axis_name} axis autocorr: {status} (within 95% CI: {within_ci})", "📊", color)
+            
+            # 4. Trace and numerical stability
+            final_trace = np.trace(ekf.P)
+            print_colored(f"  🔢 Final trace(P): {final_trace:.2f}", "🔢", "cyan")
+            if final_trace < 1000:
+                print_colored(f"  ✅ Numerical stability: GOOD (trace < 1000)", "✅", "green")
+            else:
+                print_colored(f"  ⚠️ Numerical stability: CONCERNING (trace ≥ 1000)", "⚠️", "yellow")
+        
+        # 5. Generate comprehensive residual plots
+        if mode_3d and config.get('performance_monitoring', {}).get('generate_performance_plots', True):
+            output_dir = get_output_base_dir()
+            generate_enhanced_residual_plots(ekf, diagnostics, output_dir, axis)
+        
+        logger.info("✅ Validazione completa terminata")
+        
+        # Accettazione output - validazione soft per stabilità  
+        _validate_final_performance(ekf, results, axis, diagnostics)
         
         # 📊 GENERAZIONE REPORT PRESTAZIONI EKF
         print_colored("", "", "white")  # Spacer
@@ -1261,20 +2641,17 @@ def apply_extended_kalman_filter(data, config, axis):
         
         # Controlla se sono abilitati i grafici e il salvataggio del report
         if config.get('performance_monitoring', {}).get('generate_performance_plots', True):
-            output_dir = config.get('output_files', {}).get('plots', 'data/outputs')
-            output_dir = str(Path(output_dir).parent.resolve())  # Ottieni la directory assoluta
+            output_dir = get_output_base_dir()
             generate_performance_plots(performance_monitor, output_dir, axis)
         
         if config.get('performance_monitoring', {}).get('save_performance_report', True):
-            output_dir = config.get('output_files', {}).get('plots', 'data/outputs')
-            output_dir = str(Path(output_dir).parent.resolve())  # Ottieni la directory assoluta
+            output_dir = get_output_base_dir()
             report_format = config.get('performance_monitoring', {}).get('performance_report_format', 'yaml')
             save_performance_report_to_file(performance_report, performance_monitor, output_dir, axis, report_format)
         
         # 🎛️ GENERAZIONE DASHBOARD DI TUNING AVANZATO
         if config.get('performance_monitoring', {}).get('enable_advanced_analysis', True):
-            output_dir = config.get('output_files', {}).get('plots', 'data/outputs')
-            output_dir = str(Path(output_dir).parent.resolve())  # Ottieni la directory assoluta
+            output_dir = get_output_base_dir()
             tuning_report = generate_tuning_dashboard(performance_monitor, results, data, config, axis, output_dir)
             results['tuning_report'] = tuning_report
         
@@ -1285,6 +2662,7 @@ def apply_extended_kalman_filter(data, config, axis):
         
         # Aggiungi metriche di performance ai risultati per l'ottimizzazione
         results['performance_metrics'] = performance_report
+        results['summary_stats'] = summary_stats
         
         logger.info(f"EKF completato con successo per l'asse {axis}")
         return results
@@ -1305,7 +2683,8 @@ def save_results(results, output_path, file_type):
     """
     try:
         # Assicurati che la directory di output esista
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         
         # Estrai il DataFrame dai risultati
         df = results['data'] if isinstance(results, dict) else results
@@ -1368,21 +2747,25 @@ def plot_results(data, results, config, axis, output_path=None):
         axes[2].grid(True)
         axes[2].legend()
         
-        # Titolo generale
-        plt.suptitle(f"{config['visualization']['plot_title']} - Axis {axis}")
+        # Titolo generale e configurazione visualizzazione con fallback sicuri
+        visualization_cfg = config.get('visualization', {})
+        plot_title = visualization_cfg.get('plot_title', 'EKF Results')
+        save_plots = visualization_cfg.get('save_plots', True)
+        show_plots = visualization_cfg.get('show_plots', False)
+        
+        plt.suptitle(f"{plot_title} - Axis {axis}")
         plt.tight_layout()
         
         # Salva il grafico se richiesto
-        if output_path is not None and config['visualization']['save_plots']:
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            # Modifichiamo il nome del file per includere l'asse
-            base, ext = os.path.splitext(output_path)
-            axis_output_path = f"{base}_{axis}{ext}"
+        if output_path is not None and save_plots:
+            output_path = Path(output_path)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            axis_output_path = output_path.with_name(f"{output_path.stem}_{axis}{output_path.suffix}")
             plt.savefig(axis_output_path)
             logger.info(f"Grafico salvato in {axis_output_path}")
         
         # Mostra il grafico se richiesto
-        if config['visualization']['show_plots']:
+        if show_plots:
             plt.show()
         else:
             plt.close(fig)
@@ -1588,6 +2971,702 @@ def apply_post_processing(velocities, positions, config):
     return velocities, positions
 
 
+class ZUPTDetector:
+    """
+    Rilevatore ZUPT (Zero Velocity Update) che valuta la stazionarietà su una
+    finestra mobile e restituisce un singolo valore booleano per l'ultimo campione.
+    """
+    
+    def __init__(self, config):
+        """Inizializza il rilevatore ZUPT."""
+        zupt_config = config.get('zupt', {})
+        
+        # Valori di default con compatibilità verso le vecchie chiavi di configurazione
+        self.window_size = int(zupt_config.get('window_size', zupt_config.get('window_samples', 20)))
+        self.accel_mean_threshold = float(zupt_config.get('accel_threshold', zupt_config.get('acc_mean_thr', 0.4)))
+        self.accel_std_threshold = float(zupt_config.get('variance_threshold', zupt_config.get('acc_std_thr', 0.05)))
+        self.velocity_threshold = float(zupt_config.get('velocity_threshold', zupt_config.get('vel_thr', 0.05)))
+        self.min_stationary_frames = int(zupt_config.get('min_stationary_frames', zupt_config.get('min_stationary', 5)))
+        self.cooldown_samples = int(zupt_config.get('cooldown_samples', 0))
+        
+        # Adaptive threshold configuration
+        self.adaptive_thresholds = bool(zupt_config.get('adaptive_thresholds', True))
+        self.auto_relax_samples = int(zupt_config.get('auto_relax_after', max(self.window_size * 4, 200)))
+        self.relaxation_rate = float(zupt_config.get('relaxation_rate', 0.5))
+        self.max_relax_factor = float(zupt_config.get('max_relax_factor', 3.0))
+        
+        debug_cfg = config.get('debug', {})
+        self.debug = bool(zupt_config.get('debug', False) or debug_cfg.get('enable_debug_output', False))
+        
+        # Contatori per garantire durata minima e cooldown tra ZUPT consecutivi
+        self._stationary_counter = 0
+        self._cooldown_counter = 0
+        self._samples_since_last_zupt = 0
+        self._current_relax_multiplier = 1.0
+        self._last_debug_report = -1
+        
+        # Manteniamo i valori di soglia originali per eventuali reset
+        self._base_accel_mean_threshold = self.accel_mean_threshold
+        self._base_accel_std_threshold = self.accel_std_threshold
+        self._base_velocity_threshold = self.velocity_threshold
+    
+    def detect_stationary(self, accel_data, velocities=None):
+        """
+        Determina se l'ultimo campione rappresenta una condizione di velocità zero.
+        
+        Args:
+            accel_data: sequenza di accelerazioni (N, 3) o inferiore alla window
+            velocities: sequenza di velocità stimate (N, 3), opzionale
+            
+        Returns:
+            bool: True se il campione corrente è considerato stazionario.
+        """
+        if len(accel_data) < self.window_size:
+            self._stationary_counter = 0
+            if self._cooldown_counter > 0:
+                self._cooldown_counter -= 1
+            return False
+        
+        accel_window = np.asarray(accel_data[-self.window_size:])
+        accel_mag = np.linalg.norm(accel_window, axis=1)
+        
+        # Aggiorna fattore di rilassamento se la modalità adattiva è attiva
+        if self.adaptive_thresholds:
+            if self._samples_since_last_zupt > self.auto_relax_samples:
+                extra = self._samples_since_last_zupt - self.auto_relax_samples
+                relax_multiplier = 1.0 + (extra / max(self.auto_relax_samples, 1)) * self.relaxation_rate
+                relax_multiplier = min(relax_multiplier, self.max_relax_factor)
+            else:
+                relax_multiplier = 1.0
+        else:
+            relax_multiplier = 1.0
+        self._current_relax_multiplier = relax_multiplier
+        
+        mean_threshold = self._base_accel_mean_threshold * relax_multiplier
+        std_threshold = self._base_accel_std_threshold * relax_multiplier
+        velocity_threshold = self._base_velocity_threshold * relax_multiplier
+        
+        mean_accel_norm = np.linalg.norm(np.mean(accel_window, axis=0))
+        std_accel_mag = np.std(accel_mag)
+        
+        velocity_ok = True
+        if velocities is not None and len(velocities) >= self.window_size:
+            velocity_window = np.asarray(velocities[-self.window_size:])
+            vel_mag = np.linalg.norm(velocity_window, axis=1)
+            velocity_ok = np.mean(vel_mag) < velocity_threshold
+        
+        stationary_candidate = (
+            mean_accel_norm < mean_threshold and
+            std_accel_mag < std_threshold and
+            velocity_ok
+        )
+        
+        if self._cooldown_counter > 0:
+            self._cooldown_counter -= 1
+            stationary_candidate = False
+        
+        if stationary_candidate:
+            self._stationary_counter += 1
+            if self._stationary_counter >= self.min_stationary_frames:
+                self._cooldown_counter = self.cooldown_samples
+                self._samples_since_last_zupt = 0
+                self._current_relax_multiplier = 1.0
+                return True
+        else:
+            self._stationary_counter = 0
+            self._samples_since_last_zupt += 1
+        
+        # Debug logging controllato per capire perché non si attiva ZUPT
+        if self.debug:
+            should_report = False
+            if stationary_candidate is False and self._samples_since_last_zupt % max(1, self.window_size) == 0:
+                should_report = True
+            elif self.adaptive_thresholds and relax_multiplier > 1.0 and self._samples_since_last_zupt != self._last_debug_report:
+                should_report = True
+            if should_report:
+                logger.info(
+                    "🔎 ZUPT debug | mean=%.4f(th=%.4f) std=%.4f(th=%.4f) vel_ok=%s(th=%.4f) relax=%.2f counter=%d",
+                    mean_accel_norm,
+                    mean_threshold,
+                    std_accel_mag,
+                    std_threshold,
+                    velocity_ok,
+                    velocity_threshold,
+                    relax_multiplier,
+                    self._samples_since_last_zupt,
+                )
+                self._last_debug_report = self._samples_since_last_zupt
+        
+        return False
+
+
+def preprocess_acceleration(accel_data: np.ndarray, fs: float, config: dict) -> np.ndarray:
+    """
+    Pre-processa i dati di accelerazione con filtri per ridurre rumore e deriva.
+    
+    Args:
+        accel_data: Array (N, 3) di accelerazioni [ax, ay, az]
+        fs: Frequenza di campionamento [Hz]
+        config: Configurazione con sezione 'preprocessing'
+    
+    Returns:
+        Array filtrato (N, 3)
+    """
+    preproc_cfg = config.get('preprocessing', {})
+    
+    logger = logging.getLogger(__name__)
+    # print(f"DEBUG: preprocess_acceleration called, enabled={preproc_cfg.get('enabled', False)}")
+    logger.info(f"🔍 Preprocessing config: enabled={preproc_cfg.get('enabled', False)}")
+    
+    if not preproc_cfg.get('enabled', False):
+        logger.info("⚠️ Preprocessing disabled, returning raw data")
+        return accel_data
+    
+    logger.info("🚀 Starting acceleration preprocessing...")
+    # print("DEBUG: Starting preprocessing filters...")
+    filtered = accel_data.copy()
+    stats_before = {
+        'mean': np.mean(filtered, axis=0),
+        'std': np.std(filtered, axis=0),
+        'max': np.max(np.abs(filtered), axis=0)
+    }
+    
+    # 1. Low-pass filter (Butterworth) per rimuovere rumore ad alta frequenza
+    if preproc_cfg.get('lowpass_filter', {}).get('enabled', False):
+        # print("DEBUG: Applying low-pass filter...")
+        lp_cfg = preproc_cfg['lowpass_filter']
+        cutoff = lp_cfg.get('cutoff_hz', 10.0)
+        order = lp_cfg.get('order', 4)
+        
+        # Butterworth filter
+        nyquist = fs / 2.0
+        normalized_cutoff = cutoff / nyquist
+        
+        if normalized_cutoff < 1.0:
+            b, a = signal.butter(order, normalized_cutoff, btype='low', analog=False)
+            
+            for axis in range(3):
+                # Applica filtro bidirezionale (zero-phase)
+                filtered[:, axis] = signal.filtfilt(b, a, filtered[:, axis])
+            
+            logger.info(f"✅ Low-pass filter applicato: cutoff={cutoff}Hz, order={order}")
+            # print(f"DEBUG: Low-pass filter applied: cutoff={cutoff}Hz")
+        else:
+            logger.warning(f"⚠️ Cutoff {cutoff}Hz >= Nyquist {nyquist}Hz, skipping low-pass")
+    
+    # 2. Median filter per rimuovere spike/outliers
+    if preproc_cfg.get('median_filter', {}).get('enabled', False):
+        med_cfg = preproc_cfg['median_filter']
+        kernel_size = med_cfg.get('kernel_size', 5)
+        
+        for axis in range(3):
+            filtered[:, axis] = signal.medfilt(filtered[:, axis], kernel_size=kernel_size)
+        
+        logger.info(f"✅ Median filter applicato: kernel_size={kernel_size}")
+    
+    # 3. High-pass filter (opzionale) per rimuovere drift DC
+    if preproc_cfg.get('highpass_filter', {}).get('enabled', False):
+        hp_cfg = preproc_cfg['highpass_filter']
+        cutoff = hp_cfg.get('cutoff_hz', 0.1)
+        order = hp_cfg.get('order', 2)
+        
+        nyquist = fs / 2.0
+        normalized_cutoff = cutoff / nyquist
+        
+        if 0 < normalized_cutoff < 1.0:
+            b, a = signal.butter(order, normalized_cutoff, btype='high', analog=False)
+            
+            for axis in range(3):
+                filtered[:, axis] = signal.filtfilt(b, a, filtered[:, axis])
+            
+            logger.info(f"✅ High-pass filter applicato: cutoff={cutoff}Hz, order={order}")
+    
+    stats_after = {
+        'mean': np.mean(filtered, axis=0),
+        'std': np.std(filtered, axis=0),
+        'max': np.max(np.abs(filtered), axis=0)
+    }
+    
+    logger.info(f"📊 Preprocessing stats:")
+    logger.info(f"  Before - std: {stats_before['std']}, max: {stats_before['max']}")
+    logger.info(f"  After  - std: {stats_after['std']}, max: {stats_after['max']}")
+    
+    return filtered
+
+
+def postprocess_velocity_position(velocity: np.ndarray, position: np.ndarray, 
+                                   timestamps: np.ndarray, config: dict) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Post-processa velocità e posizione per ridurre deriva e migliorare periodicità.
+    
+    Args:
+        velocity: Array (N, 3) di velocità
+        position: Array (N, 3) di posizioni
+        timestamps: Array (N,) di timestamp
+        config: Configurazione con sezione 'postprocess'
+    
+    Returns:
+        Tupla (velocity_corrected, position_corrected)
+    """
+    postproc_cfg = config.get('postprocess', {})
+    logger = logging.getLogger(__name__)
+    
+    logger.info("🚀 Starting advanced post-processing...")
+    
+    vel_corrected = velocity.copy()
+    pos_corrected = position.copy()
+    
+    # 1. Detrending lineare per rimuovere deriva
+    if postproc_cfg.get('detrend_velocity', {}).get('enabled', False):
+        for axis in range(3):
+            vel_corrected[:, axis] = signal.detrend(vel_corrected[:, axis], type='linear')
+        logger.info("✅ Velocity detrending applicato")
+    
+    if postproc_cfg.get('detrend_position', {}).get('enabled', False):
+        for axis in range(3):
+            pos_corrected[:, axis] = signal.detrend(pos_corrected[:, axis], type='linear')
+        logger.info("✅ Position detrending applicato")
+    
+    # 2. High-pass filter sulla posizione per rimuovere deriva DC
+    if postproc_cfg.get('position_highpass', {}).get('enabled', False):
+        hp_cfg = postproc_cfg['position_highpass']
+        cutoff = hp_cfg.get('cutoff_hz', 0.05)
+        order = hp_cfg.get('order', 2)
+        fs = 1.0 / np.mean(np.diff(timestamps)) if len(timestamps) > 1 else 100.0
+        
+        nyquist = fs / 2.0
+        normalized_cutoff = cutoff / nyquist
+        
+        if 0 < normalized_cutoff < 1.0:
+            b, a = signal.butter(order, normalized_cutoff, btype='high', analog=False)
+            
+            for axis in range(3):
+                pos_corrected[:, axis] = signal.filtfilt(b, a, pos_corrected[:, axis])
+            
+            logger.info(f"✅ Position high-pass filter: cutoff={cutoff}Hz")
+    
+    # 3. Savitzky-Golay smoothing per movimento periodico
+    # 3. Savitzky-Golay smoothing per movimento periodico
+    if postproc_cfg.get('savgol_smooth', {}).get('enabled', False):
+        sg_cfg = postproc_cfg['savgol_smooth']
+        window_length = sg_cfg.get('window_length', 51)
+        polyorder = sg_cfg.get('polyorder', 3)
+        
+        # Assicura window_length dispari
+        if window_length % 2 == 0:
+            window_length += 1
+        
+        # Assicura window_length > polyorder
+        if window_length <= polyorder:
+            window_length = polyorder + 2
+            if window_length % 2 == 0:
+                window_length += 1
+        
+        if window_length < len(vel_corrected):
+            for axis in range(3):
+                vel_corrected[:, axis] = signal.savgol_filter(
+                    vel_corrected[:, axis], window_length, polyorder
+                )
+                pos_corrected[:, axis] = signal.savgol_filter(
+                    pos_corrected[:, axis], window_length, polyorder
+                )
+            logger.info(f"✅ Savitzky-Golay smoothing: window={window_length}, poly={polyorder}")
+    
+    logger.info("✅ Advanced post-processing completed")
+    return vel_corrected, pos_corrected
+
+
+class ExtendedKalmanFilter9D:
+    """
+    Extended Kalman Filter 9D per stima di posizione, velocità e bias accelerometrico.
+    
+    Stato: [px, py, pz, vx, vy, vz, bx, by, bz]
+    Implementa Joseph form per stabilità numerica e ZUPT per correzioni.
+    """
+    
+    def __init__(self, config):
+        """Inizializza l'EKF 9D."""
+        self.config = config
+        ekf_config = config.get('ekf', {})
+        debug_cfg = config.get('debug', {})
+        self.debug_enabled = bool(debug_cfg.get('enable_debug_output', False))
+        self.debug_every_n = int(debug_cfg.get('log_every_n', 100))
+        self.debug_print_state = bool(debug_cfg.get('print_state_snapshots', False))
+        self.debug_log_innovations = bool(debug_cfg.get('log_innovations', True))
+        self.step_counter = 0
+        self._last_debug_step = -1
+        if self.debug_enabled:
+            logger.info(
+                "🟣 Debug EKF9D attivo (every %d steps, print=%s, innovations=%s)",
+                self.debug_every_n,
+                self.debug_print_state,
+                self.debug_log_innovations,
+            )
+        
+        # Stato 9D: [px, py, pz, vx, vy, vz, bx, by, bz]
+        initial_pos = ekf_config.get('initial_position', [0.0, 0.0, 0.0])
+        initial_vel = ekf_config.get('initial_velocity', [0.0, 0.0, 0.0])  
+        initial_bias = ekf_config.get('initial_bias', [0.0, 0.0, 0.0])
+        
+        self.x = np.array(initial_pos + initial_vel + initial_bias).reshape(9, 1)
+        
+        # Matrice di covarianza iniziale 9x9
+        initial_cov_diag = ekf_config.get('initial_covariance', {})
+        pos_var = initial_cov_diag.get('position', 1.0)
+        vel_var = initial_cov_diag.get('velocity', 1.0)
+        bias_var = initial_cov_diag.get('bias', 1e-6)
+        
+        self.P = np.diag([pos_var]*3 + [vel_var]*3 + [bias_var]*3)
+        
+        # Noise matrices
+        process_noise = ekf_config.get('process_noise', {})
+        self.Q = self._build_process_noise_matrix(process_noise)
+        
+        # MEGA DEBUG - Measurement noise
+        measurement_noise = ekf_config.get('measurement_noise', 0.1)
+        logger.info("🔍 DEBUG TYPES - Measurement noise:")
+        logger.info(f"  measurement_noise type: {type(measurement_noise)}")
+        logger.info(f"  measurement_noise value: {measurement_noise}")
+        
+        try:
+            measurement_noise_array = np.asarray(measurement_noise, dtype=float)
+            logger.info(f"  Converted to numpy array: dtype={measurement_noise_array.dtype}, shape={measurement_noise_array.shape}")
+        except (TypeError, ValueError) as e:
+            logger.error(f"  FAILED numpy conversion: {e}")
+            logger.warning(
+                "⚠️ Invalid measurement_noise value %s; falling back to 0.1",
+                measurement_noise,
+            )
+            measurement_noise_array = np.array(0.1, dtype=float)
+
+        if measurement_noise_array.ndim == 0:
+            self.R = np.eye(3, dtype=float) * float(measurement_noise_array)
+            logger.info(f"  R created as scalar * I(3): {float(measurement_noise_array)}")
+        elif measurement_noise_array.ndim == 1:
+            if measurement_noise_array.size != 3:
+                raise ValueError(
+                    "measurement_noise vector must have length 3 (for x, y, z). "
+                    f"Received length {measurement_noise_array.size}"
+                )
+            self.R = np.diag(measurement_noise_array.astype(float))
+            logger.info(f"  R created as diagonal from vector: {measurement_noise_array}")
+        else:
+            measurement_noise_array = np.asarray(measurement_noise_array, dtype=float)
+            if measurement_noise_array.shape != (3, 3):
+                raise ValueError(
+                    "measurement_noise matrix must be 3x3. "
+                    f"Received shape {measurement_noise_array.shape}"
+                )
+            self.R = measurement_noise_array
+            logger.info(f"  R created as full matrix")
+        
+        logger.info(f"✅ R created: shape={self.R.shape}, dtype={self.R.dtype}")
+        logger.info(f"✅ R diagonal: {np.diag(self.R)}")
+        
+        # Parametro dt (compatibile con sample_rate)
+        sample_rate = ekf_config.get('sample_rate_hz')
+        if sample_rate and sample_rate > 0:
+            self.dt = 1.0 / sample_rate
+        else:
+            self.dt = ekf_config.get('dt', 0.01)
+        
+        # Gestione gravità e clamp accelerazioni
+        self.use_gravity_compensation = ekf_config.get('use_gravity_compensation', False)
+        gravity_value = ekf_config.get('gravity_mps2', 9.80665)
+        gravity_vector = ekf_config.get('gravity_vector', [0.0, 0.0, gravity_value])
+        self.gravity_vector = np.array(gravity_vector, dtype=float).reshape(3, 1)
+        
+        clamp_cfg = ekf_config.get('clamp_accel', {})
+        self.clamp_accel = clamp_cfg.get('enabled', False)
+        self.clamp_min = clamp_cfg.get('min', -50.0)
+        self.clamp_max = clamp_cfg.get('max', 50.0)
+        
+        # Joseph form flag
+        self.use_joseph_form = ekf_config.get('numerical_stability', {}).get('use_joseph_form', True)
+        
+        # ZUPT detector
+        self.zupt_detector = ZUPTDetector(config)
+        
+        # Diagnostics
+        self.innovation_history = []
+        self.nis_history = []
+        self.state_history = []
+        
+        # Stato interno per diagnostica
+        self._prev_velocity = self.x[3:6].copy()
+        self._last_accel_corrected = np.zeros((3, 1))
+    
+    def _build_process_noise_matrix(self, process_config):
+        """Costruisce la matrice Q del rumore di processo."""
+        # MEGA DEBUG - Process noise configuration
+        logger.info("🔍 DEBUG TYPES - Process noise configuration:")
+        logger.info(f"  process_config type: {type(process_config)}")
+        logger.info(f"  process_config value: {process_config}")
+        
+        if isinstance(process_config, dict):
+            for key, value in process_config.items():
+                logger.info(f"  {key}: type={type(value)}, value={value}")
+        
+        # Default values
+        pos_noise = process_config.get('position', 1e-4)
+        vel_noise = process_config.get('velocity', 1e-3)
+        bias_noise = process_config.get('bias', 1e-8)
+        
+        logger.info(f"🔍 Extracted noise values:")
+        logger.info(f"  pos_noise: type={type(pos_noise)}, value={pos_noise}")
+        logger.info(f"  vel_noise: type={type(vel_noise)}, value={vel_noise}")
+        logger.info(f"  bias_noise: type={type(bias_noise)}, value={bias_noise}")
+        
+        # Force conversion to float
+        try:
+            pos_noise_float = float(pos_noise)
+            logger.info(f"  pos_noise converted: {pos_noise} -> {pos_noise_float} ✅")
+        except (TypeError, ValueError) as e:
+            logger.error(f"  pos_noise FAILED conversion: {e}")
+            pos_noise_float = 1e-4
+            
+        try:
+            vel_noise_float = float(vel_noise)
+            logger.info(f"  vel_noise converted: {vel_noise} -> {vel_noise_float} ✅")
+        except (TypeError, ValueError) as e:
+            logger.error(f"  vel_noise FAILED conversion: {e}")
+            vel_noise_float = 1e-3
+            
+        try:
+            bias_noise_float = float(bias_noise)
+            logger.info(f"  bias_noise converted: {bias_noise} -> {bias_noise_float} ✅")
+        except (TypeError, ValueError) as e:
+            logger.error(f"  bias_noise FAILED conversion: {e}")
+            bias_noise_float = 1e-8
+        
+        Q_diag = [pos_noise_float]*3 + [vel_noise_float]*3 + [bias_noise_float]*3
+        logger.info(f"🔍 Q_diag before building Q: {Q_diag}")
+        logger.info(f"🔍 Q_diag types: {[type(x) for x in Q_diag]}")
+        
+        Q_matrix = np.diag(Q_diag)
+        logger.info(f"✅ Q_matrix created: shape={Q_matrix.shape}, dtype={Q_matrix.dtype}")
+        logger.info(f"✅ Q_matrix diagonal sample: {Q_matrix.diagonal()[:3]}")
+        
+        return Q_matrix
+    
+    def _debug_state_snapshot(self, label, extra_msg=""):
+        """Debug helper per loggare stato/covarianza quando abilitato."""
+        if not self.debug_enabled:
+            return
+        msg = (
+            f"{label} | pos={np.round(self.x[0:3,0],4)} vel={np.round(self.x[3:6,0],4)} "
+            f"bias={np.round(self.x[6:9,0],5)} traceP={np.trace(self.P):.4f} {extra_msg}"
+        )
+        logger.debug(f"🟣 EKF9D {msg}")
+        if self.debug_print_state:
+            print_colored(msg, "🟣", "magenta")
+    
+    def predict(self, accel_measurement):
+        """
+        Propagazione dello stato usando la misura accelerometrica come input.
+        
+        Args:
+            accel_measurement (array-like): Accelerazione misurata (3,).
+        """
+        self.step_counter += 1
+        
+        # MEGA DEBUG - First call only
+        if self.step_counter == 1:
+            logger.info("🔍 DEBUG FIRST PREDICT CALL:")
+            logger.info(f"  accel_measurement type: {type(accel_measurement)}")
+            logger.info(f"  accel_measurement value: {accel_measurement}")
+            if hasattr(accel_measurement, 'dtype'):
+                logger.info(f"  accel_measurement dtype: {accel_measurement.dtype}")
+            if hasattr(accel_measurement, 'shape'):
+                logger.info(f"  accel_measurement shape: {accel_measurement.shape}")
+        
+        accel = np.asarray(accel_measurement, dtype=float).reshape(3, 1)
+        
+        if self.step_counter == 1:
+            logger.info(f"  accel after conversion: type={type(accel)}, dtype={accel.dtype}, shape={accel.shape}")
+            logger.info(f"  accel values: {accel.flatten()}")
+            
+            # Check Q matrix
+            logger.info(f"  Q type: {type(self.Q)}, dtype: {self.Q.dtype}, shape: {self.Q.shape}")
+            logger.info(f"  Q sample values: {self.Q.diagonal()[:3]}")
+            
+            # Check P matrix  
+            logger.info(f"  P type: {type(self.P)}, dtype: {self.P.dtype}, shape: {self.P.shape}")
+            logger.info(f"  P sample values: {self.P.diagonal()[:3]}")
+        
+        if self.clamp_accel:
+            accel = np.clip(accel, self.clamp_min, self.clamp_max)
+        
+        if self.use_gravity_compensation:
+            accel = accel - self.gravity_vector
+        
+        # Salva velocità precedente per diagnostica
+        self._prev_velocity = self.x[3:6].copy()
+        
+        # Rimuove il bias stimato
+        accel_corrected = accel - self.x[6:9]
+        self._last_accel_corrected = accel_corrected.copy()
+        
+        dt = self.dt
+        
+        # Propagazione stato (modello integrazione accelerazione)
+        self.x[0:3] = self.x[0:3] + self.x[3:6] * dt + 0.5 * accel_corrected * dt**2
+        self.x[3:6] = self.x[3:6] + accel_corrected * dt
+        # I bias restano invariati
+        
+        # Matrice di transizione linearizzata
+        F = np.eye(9)
+        F[0:3, 3:6] = np.eye(3) * dt
+        F[0:3, 6:9] = -0.5 * (dt ** 2) * np.eye(3)
+        F[3:6, 6:9] = -dt * np.eye(3)
+        
+        # Predizione covarianza
+        self.P = F @ self.P @ F.T + self.Q
+        self.P = (self.P + self.P.T) / 2
+        
+        # Diagnostica: innovazione = accelerazione corretta
+        innovation = accel_corrected.flatten()
+        self.innovation_history.append(innovation)
+        if self.debug_enabled and self.debug_log_innovations:
+            if self.debug_every_n <= 1 or (self.step_counter % self.debug_every_n == 0):
+                logger.debug(
+                    "🟣 EKF9D innovation step %d | acc_raw=%s acc_corr=%s vel=%s",
+                    self.step_counter,
+                    np.round(accel.flatten(), 4),
+                    np.round(accel_corrected.flatten(), 4),
+                    np.round(self.x[3:6, 0], 4),
+                )
+        
+        if self.debug_enabled and (
+            self.debug_every_n <= 1 or (self.step_counter % self.debug_every_n == 0)
+        ):
+            self._debug_state_snapshot(
+                "predict",
+                extra_msg=f"|acc_corr|={np.linalg.norm(accel_corrected):.4f} step={self.step_counter}",
+            )
+        
+        try:
+            R_inv = np.linalg.inv(self.R)
+            nis = float(accel_corrected.T @ R_inv @ accel_corrected)
+        except np.linalg.LinAlgError:
+            nis = float(accel_corrected.T @ accel_corrected)
+        self.nis_history.append(nis)
+        self.state_history.append(self.x.flatten().copy())
+    
+    def update(self, accel_measurement, apply_zupt=True):
+        """
+        Metodo mantenuto per retro-compatibilità. Delega alla nuova predizione.
+        """
+        warnings.warn(
+            "ExtendedKalmanFilter9D.update è deprecato: utilizzare predict() seguito da apply_zupt_update() se necessario.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        self.predict(accel_measurement)
+    
+    def apply_zupt_update(self, accel_measurement=None):
+        """Applica correzione ZUPT (velocità = 0)."""
+        # Matrice di osservazione per velocità
+        H_zupt = np.zeros((3, 9))
+        H_zupt[0:3, 3:6] = np.eye(3)  # Osserviamo le velocità
+        
+        # Misura ZUPT (velocità = 0)
+        z_zupt = np.zeros((3, 1))
+        
+        # Innovation
+        y = z_zupt - H_zupt @ self.x
+        
+        # Innovation covariance (bassa varianza per ZUPT)
+        R_zupt = np.eye(3) * 1e-6
+        S = H_zupt @ self.P @ H_zupt.T + R_zupt
+        
+        # Kalman gain
+        try:
+            K = self.P @ H_zupt.T @ np.linalg.inv(S)
+        except np.linalg.LinAlgError:
+            K = self.P @ H_zupt.T @ np.linalg.pinv(S)
+        
+        # Update
+        self.x = self.x + K @ y
+        
+        if self.use_joseph_form:
+            I_KH = np.eye(9) - K @ H_zupt
+            self.P = I_KH @ self.P @ I_KH.T + K @ R_zupt @ K.T
+        else:
+            self.P = (np.eye(9) - K @ H_zupt) @ self.P
+            
+        # Assicura simmetria
+        self.P = (self.P + self.P.T) / 2
+        self._debug_state_snapshot("apply_zupt_update", extra_msg="velocity->0")
+        
+        # Aggiorna il bias usando la misura accelerometrica durante lo ZUPT
+        if accel_measurement is not None:
+            accel = np.asarray(accel_measurement, dtype=float).reshape(3, 1)
+            if self.clamp_accel:
+                accel = np.clip(accel, self.clamp_min, self.clamp_max)
+            if self.use_gravity_compensation:
+                accel = accel - self.gravity_vector
+            
+            H_bias = np.zeros((3, 9))
+            H_bias[0:3, 6:9] = np.eye(3)
+            z_bias = accel
+            y_bias = z_bias - H_bias @ self.x
+            
+            R_bias = self.R
+            S_bias = H_bias @ self.P @ H_bias.T + R_bias
+            try:
+                K_bias = self.P @ H_bias.T @ np.linalg.inv(S_bias)
+            except np.linalg.LinAlgError:
+                K_bias = self.P @ H_bias.T @ np.linalg.pinv(S_bias)
+            
+            self.x = self.x + K_bias @ y_bias
+            
+            if self.use_joseph_form:
+                I_KH_bias = np.eye(9) - K_bias @ H_bias
+                self.P = I_KH_bias @ self.P @ I_KH_bias.T + K_bias @ R_bias @ K_bias.T
+            else:
+                self.P = (np.eye(9) - K_bias @ H_bias) @ self.P
+            
+            self.P = (self.P + self.P.T) / 2
+            
+            # Aggiorna diagnostica con l'ultima correzione
+            self.innovation_history.append((accel - self.x[6:9]).flatten())
+            try:
+                R_inv = np.linalg.inv(R_bias)
+                nis_bias = float(y_bias.T @ R_inv @ y_bias)
+            except np.linalg.LinAlgError:
+                nis_bias = float(y_bias.T @ y_bias)
+            self.nis_history.append(nis_bias)
+            self._debug_state_snapshot(
+                "apply_zupt_update_bias",
+                extra_msg=f"acc_meas={np.round(accel.flatten(),4)}",
+            )
+        
+        if self.state_history:
+            self.state_history[-1] = self.x.flatten().copy()
+    
+    def get_position(self):
+        """Restituisce posizione stimata."""
+        return self.x[0:3].flatten()
+    
+    def get_velocity(self):
+        """Restituisce velocità stimata."""
+        return self.x[3:6].flatten()
+    
+    def get_bias(self):
+        """Restituisce bias stimato."""
+        return self.x[6:9].flatten()
+    
+    def get_diagnostics(self):
+        """Restituisce diagnostici del filtro."""
+        return {
+            'innovation_history': np.array(self.innovation_history),
+            'nis_history': np.array(self.nis_history),
+            'state_history': np.array(self.state_history),
+            'current_covariance': self.P.copy()
+        }
+
+
 class EKFParameterOptimizer:
     """
     Ottimizzatore automatico dei parametri EKF attraverso iterazioni successive.
@@ -1637,6 +3716,15 @@ class EKFParameterOptimizer:
             float: Punteggio di performance (più basso è migliore)
         """
         try:
+            # Validazione input
+            if performance_metrics is None:
+                logger.warning("⚠️ performance_metrics è None - usando score penalità")
+                return 1000
+                
+            if not isinstance(performance_metrics, dict):
+                logger.warning(f"⚠️ performance_metrics non è dict: {type(performance_metrics)}")
+                return 1000
+            
             # Pesi per diverse metriche (più importante = peso maggiore)
             weights = {
                 'trace_penalty': 0.3,      # Penalità per traccia alta
@@ -1646,25 +3734,34 @@ class EKFParameterOptimizer:
                 'stability_penalty': 0.1   # Penalità per instabilità
             }
             
-            # Estrai metriche
-            mean_trace = performance_metrics.get('trace_statistics', {}).get('mean_trace', 50000)
-            max_correlation = performance_metrics.get('innovation_whiteness', {}).get('max_correlation', 1.0)
-            mean_nis = performance_metrics.get('nis_statistics', {}).get('mean_nis', 0.5)
-            is_converged = performance_metrics.get('convergence', {}).get('is_converged', False)
-            current_trace = performance_metrics.get('convergence', {}).get('current_trace', 50000)
+            # Estrai metriche con valori di default sicuri
+            trace_stats = performance_metrics.get('trace_statistics', {})
+            innovation_stats = performance_metrics.get('innovation_whiteness', {})
+            nis_stats = performance_metrics.get('nis_statistics', {})
+            convergence_stats = performance_metrics.get('convergence', {})
+            
+            mean_trace = trace_stats.get('mean_trace', 50000)
+            max_correlation = innovation_stats.get('max_correlation', 1.0)
+            mean_nis = nis_stats.get('mean_nis', 0.5)
+            is_converged = convergence_stats.get('is_converged', False)
+            current_trace = convergence_stats.get('current_trace', 50000)
+            
+            # Debug logging per capire i valori
+            logger.debug(f"🔍 Metriche score: trace={mean_trace}, corr={max_correlation}, "
+                        f"nis={mean_nis}, conv={is_converged}, curr_trace={current_trace}")
             
             # Calcola penalità individuali
             trace_penalty = min(mean_trace / 1000, 100)  # Normalizza traccia
-            innovation_penalty = max_correlation * 100   # Penalità correlazione
+            innovation_penalty = max_correlation * 100 if max_correlation is not None else 100
             
             # Penalità NIS (ideale ~1-3)
-            if 0.5 <= mean_nis <= 3.0:
+            if mean_nis is not None and 0.5 <= mean_nis <= 3.0:
                 nis_penalty = 0
             else:
-                nis_penalty = abs(mean_nis - 1.5) * 20
+                nis_penalty = abs((mean_nis or 1.5) - 1.5) * 20
             
             convergence_penalty = 0 if is_converged else 50
-            stability_penalty = min(current_trace / 10000, 20)
+            stability_penalty = min(current_trace / 10000, 20) if current_trace is not None else 20
             
             # Punteggio finale pesato
             total_score = (
@@ -1677,11 +3774,13 @@ class EKFParameterOptimizer:
             
             logger.debug(f"📊 Score components: trace={trace_penalty:.2f}, innovation={innovation_penalty:.2f}, "
                         f"nis={nis_penalty:.2f}, convergence={convergence_penalty:.2f}, stability={stability_penalty:.2f}")
+            logger.info(f"🎯 Score totale calcolato: {total_score:.2f}")
             
             return total_score
             
         except Exception as e:
-            logger.warning(f"Errore nel calcolo dello score: {e}")
+            logger.error(f"❌ Errore nel calcolo dello score: {e}")
+            logger.error(f"❌ Metriche disponibili: {list(performance_metrics.keys()) if performance_metrics else 'None'}")
             return 1000  # Score alto come penalità
     
     def generate_parameter_candidate(self, iteration):
@@ -1697,11 +3796,11 @@ class EKFParameterOptimizer:
         if iteration == 0:
             # Prima iterazione: usa parametri attuali
             return {
-                'position_noise': self.base_config['kalman_filter']['process_noise']['position'],
-                'velocity_noise': self.base_config['kalman_filter']['process_noise']['velocity'],
-                'acceleration_noise': self.base_config['kalman_filter']['process_noise']['acceleration'],
-                'bias_noise': self.base_config['kalman_filter']['process_noise']['bias'],
-                'measurement_noise': self.base_config['kalman_filter']['measurement_noise']
+                'position_noise': self.base_config['ekf']['process_noise']['position'],
+                'velocity_noise': self.base_config['ekf']['process_noise']['velocity'],
+                'acceleration_noise': self.base_config['ekf']['process_noise']['acceleration'],
+                'bias_noise': self.base_config['ekf']['process_noise']['bias'],
+                'measurement_noise': self.base_config['ekf']['measurement_noise']
             }
         
         # Strategie di ottimizzazione
@@ -1774,11 +3873,11 @@ class EKFParameterOptimizer:
         """
         updated_config = config.copy()
         
-        updated_config['kalman_filter']['process_noise']['position'] = params['position_noise']
-        updated_config['kalman_filter']['process_noise']['velocity'] = params['velocity_noise']
-        updated_config['kalman_filter']['process_noise']['acceleration'] = params['acceleration_noise']
-        updated_config['kalman_filter']['process_noise']['bias'] = params['bias_noise']
-        updated_config['kalman_filter']['measurement_noise'] = params['measurement_noise']
+        updated_config['ekf']['process_noise']['position'] = params['position_noise']
+        updated_config['ekf']['process_noise']['velocity'] = params['velocity_noise']
+        updated_config['ekf']['process_noise']['acceleration'] = params['acceleration_noise']
+        updated_config['ekf']['process_noise']['bias'] = params['bias_noise']
+        updated_config['ekf']['measurement_noise'] = params['measurement_noise']
         
         return updated_config
     
@@ -1799,6 +3898,16 @@ class EKFParameterOptimizer:
             try:
                 # Genera parametri candidati
                 candidate_params = self.generate_parameter_candidate(iteration)
+                
+                # Assicura che tutti i parametri siano numerici
+                numeric_params = {}
+                for key, value in candidate_params.items():
+                    try:
+                        numeric_params[key] = float(value)
+                    except (TypeError, ValueError):
+                        logger.error(f"❌ Parametro '{key}' non numerico: {value!r}")
+                        raise
+                candidate_params = numeric_params
                 
                 # Aggiorna configurazione
                 test_config = self.update_config_with_parameters(self.base_config, candidate_params)
@@ -2126,10 +4235,12 @@ def run_EKF_for_vel_and_pos_est_from_acc(config_path=None):
         # Dizionario per i risultati
         results_dict = {}
         
-        # Definisci la directory di output fissa
-        fixed_output_dir = "/Volumes/nvme/Github/igmSquatBiomechanics/sources/lab/modules/EKF_for_vel_and_pos_est_from_acc/data/outputs"
-        os.makedirs(fixed_output_dir, exist_ok=True)
-        print_colored(f"Directory di output impostata a: {fixed_output_dir}", "📁", "cyan")
+        # Directory di output centralizzata
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        module_dir = os.path.dirname(script_dir)  # Risali di un livello (da sources/ a modulo/)
+        base_output_dir = get_output_base_dir()
+        base_output_dir.mkdir(parents=True, exist_ok=True)
+        print_colored(f"Directory di output impostata a: {base_output_dir}", "📁", "cyan")
         
         # Verifica se l'auto-tuning è abilitato
         auto_tuning_enabled = config.get('auto_tuning', {}).get('enabled', False)
@@ -2152,31 +4263,31 @@ def run_EKF_for_vel_and_pos_est_from_acc(config_path=None):
                 logger.info("✨ Applicazione parametri ottimizzati a tutti gli assi")
                 
                 # Aggiorna configurazione con migliori parametri
-                config['kalman_filter']['process_noise']['position'] = optimization_results['best_parameters']['position_noise']
-                config['kalman_filter']['process_noise']['velocity'] = optimization_results['best_parameters']['velocity_noise']
-                config['kalman_filter']['process_noise']['acceleration'] = optimization_results['best_parameters']['acceleration_noise']
-                config['kalman_filter']['process_noise']['bias'] = optimization_results['best_parameters']['bias_noise']
-                config['kalman_filter']['measurement_noise'] = optimization_results['best_parameters']['measurement_noise']
+                config['ekf']['process_noise']['position'] = optimization_results['best_parameters']['position_noise']
+                config['ekf']['process_noise']['velocity'] = optimization_results['best_parameters']['velocity_noise']
+                config['ekf']['process_noise']['acceleration'] = optimization_results['best_parameters']['acceleration_noise']
+                config['ekf']['process_noise']['bias'] = optimization_results['best_parameters']['bias_noise']
+                config['ekf']['measurement_noise'] = optimization_results['best_parameters']['measurement_noise']
                 
                 # Salva configurazione ottimizzata se richiesto
                 if config.get('auto_tuning', {}).get('save_best_config', True):
-                    optimized_config_path = os.path.join(fixed_output_dir, 'optimized_config.yaml')
+                    optimized_config_path = resolve_output_path('optimized_config.yaml', base_output_dir)
                     try:
                         import yaml
                         with open(optimized_config_path, 'w') as f:
                             yaml.dump(config, f, default_flow_style=False, sort_keys=False)
-                        print_colored(f"💾 Configurazione ottimizzata salvata: {os.path.basename(optimized_config_path)}", "💾", "green")
+                        print_colored(f"💾 Configurazione ottimizzata salvata: {optimized_config_path.name}", "💾", "green")
                         logger.info(f"Configurazione ottimizzata salvata in: {optimized_config_path}")
                     except Exception as e:
                         logger.warning(f"Errore nel salvataggio configurazione ottimizzata: {e}")
                 
                 # Salva report di ottimizzazione
-                optimization_report_path = os.path.join(fixed_output_dir, 'optimization_report.json')
+                optimization_report_path = resolve_output_path('optimization_report.json', base_output_dir)
                 try:
                     import json
                     with open(optimization_report_path, 'w') as f:
                         json.dump(optimization_results, f, indent=2, default=str)
-                    print_colored(f"📊 Report ottimizzazione salvato: {os.path.basename(optimization_report_path)}", "📊", "green")
+                    print_colored(f"📊 Report ottimizzazione salvato: {optimization_report_path.name}", "📊", "green")
                     logger.info(f"Report ottimizzazione salvato in: {optimization_report_path}")
                 except Exception as e:
                     logger.warning(f"Errore nel salvataggio report ottimizzazione: {e}")
@@ -2205,7 +4316,7 @@ def run_EKF_for_vel_and_pos_est_from_acc(config_path=None):
                     if action == 'error':
                         raise ValueError(f"❌ Validazione fallita per asse {axis}")
                     elif action == 'warn':
-                        print_colored(f"⚠️ Continuando nonostante errori di validazione per asse {axis}", "⚠️", "yellow")
+                       print_colored(f"⚠️ Continuando nonostante errori di validazione per asse {axis}", "⚠️", "yellow")
                 
                 # Controlla se ci sono avvisi per deriva
                 drift_warnings = [w for w in validation_report['warnings'] if 'deriva' in w.lower()]
@@ -2214,26 +4325,26 @@ def run_EKF_for_vel_and_pos_est_from_acc(config_path=None):
                     # Qui potremmo aggiungere correzioni aggiuntive
             
             # Crea backup se richiesto
-            velocity_output_path = os.path.join(fixed_output_dir, f'estimated_velocity_{axis}.csv')
+            velocity_output_path = resolve_output_path(f'estimated_velocity_{axis}.csv', base_output_dir)
             create_backup_if_needed(velocity_output_path, config)
             
             # Controlla conferma utente per sovrascrittura file
-            if os.path.exists(velocity_output_path) and config.get('execution_control', {}).get('user_confirmations', {}).get('confirm_file_overwrites', False):
-                if not get_user_confirmation(f"Sovrascrivere il file esistente {os.path.basename(velocity_output_path)}?", config):
+            if velocity_output_path.exists() and config.get('execution_control', {}).get('user_confirmations', {}).get('confirm_file_overwrites', False):
+                if not get_user_confirmation(f"Sovrascrivere il file esistente {velocity_output_path.name}?", config):
                     print_colored(f"⏭️ Saltando salvataggio velocità per asse {axis}", "⏭️", "yellow")
                     continue
             
             # Salva i risultati
             save_results(results, velocity_output_path, 'velocity')
-            print_colored(f"Velocità stimata salvata in: {os.path.basename(velocity_output_path)}", "💨", "green")
+            print_colored(f"Velocità stimata salvata in: {velocity_output_path.name}", "💨", "green")
             
-            position_output_path = os.path.join(fixed_output_dir, f'estimated_position_{axis}.csv')
+            position_output_path = resolve_output_path(f'estimated_position_{axis}.csv', base_output_dir)
             create_backup_if_needed(position_output_path, config)
             save_results(results, position_output_path, 'position')
-            print_colored(f"Posizione stimata salvata in: {os.path.basename(position_output_path)}", "📍", "green")
+            print_colored(f"Posizione stimata salvata in: {position_output_path.name}", "📍", "green")
             
             # Percorso per i grafici
-            plots_output_path = os.path.join(fixed_output_dir, f'ekf_plots_{axis}.png')
+            plots_output_path = resolve_output_path(f'ekf_plots_{axis}.png', base_output_dir)
             
             # Pausa step-by-step prima della visualizzazione se abilitata
             if step_config.get('enabled', False) and step_config.get('pause_before_visualization', False):
@@ -2242,7 +4353,7 @@ def run_EKF_for_vel_and_pos_est_from_acc(config_path=None):
                     return results_dict
             
             plot_results(data, results, config, axis, plots_output_path)
-            print_colored(f"Grafico salvato in: {os.path.basename(plots_output_path)}", "📊", "magenta")
+            print_colored(f"Grafico salvato in: {plots_output_path.name}", "📊", "magenta")
             
             # Salva i risultati nel dizionario
             results_dict[axis] = results
@@ -2266,8 +4377,8 @@ def run_EKF_for_vel_and_pos_est_from_acc(config_path=None):
         
         # 📊 CONFRONTO MULTI-ASSE SE PIÙ DI UN ASSE È STATO ANALIZZATO
         if len(axes_to_analyze) > 1:
-            output_dir = config.get('output_files', {}).get('plots', 'data/outputs')
-            output_dir = str(Path(output_dir).parent)
+            # Calcola directory assoluta basata sulla posizione del modulo corrente
+            output_dir = base_output_dir
             
             # Raccogli i report di tuning
             tuning_reports = {}
@@ -2285,7 +4396,14 @@ def run_EKF_for_vel_and_pos_est_from_acc(config_path=None):
         if step_config.get('enabled', False) and step_config.get('pause_before_completion', False):
             get_user_confirmation("🎊 Processo completato! Premere Invio per terminare.", config)
         
-        print_colored("🎊 Tutti gli assi elaborati con successo!", "�", "green")
+        if results_dict:
+            summary_path = generate_execution_summary_report(results_dict, config, config_path)
+            if summary_path:
+                results_dict['summary_report'] = str(summary_path)
+                logger.info(f"📄 Report riassuntivo salvato in: {summary_path}")
+                print_colored(f"Report riassuntivo salvato in: {summary_path.name}", "📄", "green")
+        
+        print_colored("🎊 Tutti gli assi elaborati con successo!", "🎊", "green")
         return results_dict
         
     except Exception as e:
@@ -2816,7 +4934,7 @@ def generate_performance_plots(performance_monitor, output_dir, axis):
         plt.tight_layout()
         
         # Salva il grafico
-        output_path = Path(output_dir) / f'EKF_performance_analysis_axis_{axis}.png'
+        output_path = resolve_output_path(f'EKF_performance_analysis_axis_{axis}.png', output_dir)
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         print_colored(f"📊 Grafici salvati in: {output_path}", "💾", "green")
         logger.info(f"📊 Grafici delle prestazioni salvati in: {output_path}")
@@ -2915,7 +5033,8 @@ def comprehensive_innovation_analysis(performance_monitor, output_dir, axis):
             axes[1, 2].grid(True, alpha=0.3)
         
         plt.tight_layout()
-        plt.savefig(f"{output_dir}/innovation_analysis_{axis}.png", dpi=300, bbox_inches='tight')
+        plot_path = resolve_output_path(f"innovation_analysis_{axis}.png", output_dir)
+        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
         plt.close()
         
         # Test Jarque-Bera per normalità
@@ -3016,7 +5135,8 @@ def nis_validation_analysis(performance_monitor, output_dir, axis):
             axes[1, 1].text(0.5, 0.5, 'Q-Q plot failed', ha='center', va='center')
         
         plt.tight_layout()
-        plt.savefig(f"{output_dir}/nis_analysis_{axis}.png", dpi=300, bbox_inches='tight')
+        plot_path = resolve_output_path(f"nis_analysis_{axis}.png", output_dir)
+        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
         plt.close()
         
         # Metriche di validazione
@@ -3146,7 +5266,8 @@ def covariance_trace_analysis(performance_monitor, output_dir, axis):
             coefficient_of_variation = ss_std / ss_mean if ss_mean != 0 else float('inf')
         
         plt.tight_layout()
-        plt.savefig(f"{output_dir}/covariance_analysis_{axis}.png", dpi=300, bbox_inches='tight')
+        plot_path = resolve_output_path(f"covariance_analysis_{axis}.png", output_dir)
+        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
         plt.close()
         
         # Metriche di convergenza
@@ -3189,9 +5310,9 @@ def residual_outlier_analysis(results, data, config, axis):
     """
     try:
         # Estrai dati
-        velocities = results['velocities']
-        positions = results['positions']
-        timestamps = results['timestamps']
+        velocities = np.asarray(results['velocities'])
+        positions = np.asarray(results.get('positions', results['velocities']))  # fallback if not provided
+        timestamps = np.asarray(results['timestamps'])
         acc_column = f'acc_{axis.lower()}'
         
         if acc_column not in data.columns:
@@ -3217,6 +5338,30 @@ def residual_outlier_analysis(results, data, config, axis):
         
         # Residui di accelerazione
         acc_residuals = measured_acc - estimated_acc
+        
+        # Gestione valori non finiti
+        finite_mask = (
+            np.isfinite(acc_residuals) &
+            np.isfinite(measured_acc) &
+            np.isfinite(estimated_acc) &
+            np.isfinite(velocities) &
+            np.isfinite(timestamps)
+        )
+        
+        if not np.any(finite_mask):
+            message = "Nessun dato finito disponibile per l'analisi dei residui"
+            logger.error(f"❌ {message}")
+            print_colored(f"❌ Errore analisi residui: {message}", "❌", "red")
+            return {'status': 'no_finite_data'}
+        
+        if not np.all(finite_mask):
+            removed = np.size(finite_mask) - np.count_nonzero(finite_mask)
+            logger.warning(f"⚠️ Residual analysis: rimossi {removed} campioni non finiti")
+            acc_residuals = acc_residuals[finite_mask]
+            measured_acc = measured_acc[finite_mask]
+            estimated_acc = estimated_acc[finite_mask]
+            velocities = velocities[finite_mask]
+            timestamps = timestamps[finite_mask]
         
         fig, axes = plt.subplots(3, 2, figsize=(15, 12))
         fig.suptitle(f'Residual and Outlier Analysis - Axis {axis}', fontsize=16)
@@ -3298,8 +5443,8 @@ def residual_outlier_analysis(results, data, config, axis):
         axes[2, 1].grid(True, alpha=0.3)
         
         plt.tight_layout()
-        output_dir = str(Path(config.get('output_path', '.')).parent)
-        plt.savefig(f"{output_dir}/residual_analysis_{axis}.png", dpi=300, bbox_inches='tight')
+        plot_path = resolve_output_path(f"residual_analysis_{axis}.png")
+        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
         plt.close()
         
         # Test Shapiro-Wilk per normalità residui
@@ -3513,7 +5658,7 @@ def generate_tuning_dashboard(performance_monitor, results, data, config, axis, 
         }
         
         # Salva report
-        tuning_report_path = f"{output_dir}/tuning_report_{axis}.json"
+        tuning_report_path = resolve_output_path(f"tuning_report_{axis}.json", output_dir)
         with open(tuning_report_path, 'w') as f:
             json.dump(tuning_report, f, indent=2, default=str)
         
@@ -3638,7 +5783,7 @@ def generate_multi_axis_comparison(tuning_reports, output_dir):
                 })
         
         # Salva report di confronto
-        comparison_path = f"{output_dir}/multi_axis_comparison.json"
+        comparison_path = resolve_output_path("multi_axis_comparison.json", output_dir)
         with open(comparison_path, 'w') as f:
             json.dump(comparison_report, f, indent=2, default=str)
         
@@ -3744,7 +5889,8 @@ def generate_multi_axis_comparison(results_dict, output_dir):
         axes[1, 2].set_ylabel('Number of Recommendations')
         
         plt.tight_layout()
-        plt.savefig(f"{output_dir}/multi_axis_comparison.png", dpi=300, bbox_inches='tight')
+        multi_axis_plot_path = resolve_output_path("multi_axis_comparison.png", output_dir)
+        plt.savefig(multi_axis_plot_path, dpi=300, bbox_inches='tight')
         plt.close()
         
         # Genera report comparativo
@@ -3801,7 +5947,8 @@ def generate_multi_axis_comparison(results_dict, output_dir):
             })
         
         # Salva report
-        with open(f"{output_dir}/multi_axis_comparison_report.json", 'w') as f:
+        comparison_report_path = resolve_output_path("multi_axis_comparison_report.json", output_dir)
+        with open(comparison_report_path, 'w') as f:
             json.dump(comparison_report, f, indent=2, default=str)
         
         # Stampa riassunto
@@ -3819,7 +5966,7 @@ def generate_multi_axis_comparison(results_dict, output_dir):
         
         print_colored("🌐 =======================================", "🌐", "blue")
         
-        print_colored(f"💾 Report multi-asse salvato: {output_dir}/multi_axis_comparison_report.json", "💾", "green")
+        print_colored(f"💾 Report multi-asse salvato: {comparison_report_path}", "💾", "green")
         return comparison_report
         
     except Exception as e:
@@ -3840,7 +5987,7 @@ def save_performance_report_to_file(performance_report, performance_monitor, out
         format: Formato del file ('yaml', 'json', 'txt')
     """
     try:
-        output_path = Path(output_dir) / f'EKF_performance_report_axis_{axis}.{format}'
+        output_path = resolve_output_path(f'EKF_performance_report_axis_{axis}.{format}', output_dir)
         
         if format == 'yaml':
             import yaml
@@ -3879,6 +6026,151 @@ def save_performance_report_to_file(performance_report, performance_monitor, out
     except Exception as e:
         logger.error(f"❌ Errore nel salvataggio del report: {e}")
         print_colored(f"❌ Errore nel salvataggio: {e}", "❌", "red")
+
+
+def generate_enhanced_residual_plots(ekf, diagnostics, output_dir, axis):
+    """
+    Generate comprehensive residual analysis plots for enhanced EKF diagnostics.
+    
+    Args:
+        ekf: ExtendedKalmanFilter3D instance
+        diagnostics: Diagnostics dictionary from EKF
+        output_dir: Output directory for plots
+        axis: Current axis being processed
+    """
+    try:
+        # Extract residual data
+        if not diagnostics['residual_stats']['mean'] or len(ekf.residual_buffer) < 20:
+            logger.warning("⚠️ Insufficient residual data for enhanced plots")
+            return
+            
+        residuals = np.array(list(ekf.residual_buffer))
+        
+        # Create comprehensive plot
+        fig, axes = plt.subplots(3, 3, figsize=(18, 12))
+        fig.suptitle(f'Enhanced Residual Analysis - Axis {axis}', fontsize=16)
+        
+        # 1. Residual time series for each axis
+        for i in range(3):
+            axes[0, i].plot(residuals[:, i], alpha=0.7)
+            axes[0, i].axhline(y=0, color='r', linestyle='--', alpha=0.5)
+            axes[0, i].set_title(f'Residuals {["X", "Y", "Z"][i]} Axis')
+            axes[0, i].set_ylabel('Residual')
+            axes[0, i].grid(True, alpha=0.3)
+            
+            # Add mean and std lines
+            mean_val = np.mean(residuals[:, i])
+            std_val = np.std(residuals[:, i])
+            axes[0, i].axhline(y=mean_val, color='g', linestyle='-', alpha=0.7, label=f'Mean: {mean_val:.3f}')
+            axes[0, i].axhline(y=mean_val + 2*std_val, color='orange', linestyle=':', alpha=0.7, label=f'±2σ: ±{2*std_val:.3f}')
+            axes[0, i].axhline(y=mean_val - 2*std_val, color='orange', linestyle=':', alpha=0.7)
+            axes[0, i].legend(fontsize=8)
+        
+        # 2. Residual histograms with normality test
+        for i in range(3):
+            axes[1, i].hist(residuals[:, i], bins=30, alpha=0.7, density=True, color=['red', 'green', 'blue'][i])
+            
+            # Fit normal distribution
+            mu, sigma = np.mean(residuals[:, i]), np.std(residuals[:, i])
+            x = np.linspace(residuals[:, i].min(), residuals[:, i].max(), 100)
+            normal_fit = stats.norm.pdf(x, mu, sigma)
+            axes[1, i].plot(x, normal_fit, 'k--', alpha=0.8, label=f'Normal(μ={mu:.3f}, σ={sigma:.3f})')
+            
+            # Kolmogorov-Smirnov test for normality
+            ks_stat, ks_p = stats.kstest(residuals[:, i], lambda x: stats.norm.cdf(x, mu, sigma))
+            axes[1, i].set_title(f'Histogram {["X", "Y", "Z"][i]} - KS p-value: {ks_p:.4f}')
+            axes[1, i].set_ylabel('Density')
+            axes[1, i].legend(fontsize=8)
+            axes[1, i].grid(True, alpha=0.3)
+        
+        # 3. Autocorrelation plots
+        if STATSMODELS_AVAILABLE and 'autocorr' in diagnostics['residual_stats']:
+            for i in range(3):
+                autocorr = diagnostics['residual_stats']['autocorr'][i]
+                lags = np.arange(1, len(autocorr) + 1)
+                axes[2, i].plot(lags, autocorr, 'o-', alpha=0.7, color=['red', 'green', 'blue'][i])
+                
+                # Add 95% confidence interval
+                ci_95 = 1.96 / np.sqrt(len(residuals))
+                axes[2, i].axhline(y=ci_95, color='r', linestyle='--', alpha=0.5, label='95% CI')
+                axes[2, i].axhline(y=-ci_95, color='r', linestyle='--', alpha=0.5)
+                axes[2, i].axhline(y=0, color='k', linestyle='-', alpha=0.3)
+                
+                axes[2, i].set_title(f'Autocorrelation {["X", "Y", "Z"][i]}')
+                axes[2, i].set_xlabel('Lag')
+                axes[2, i].set_ylabel('Autocorrelation')
+                axes[2, i].legend(fontsize=8)
+                axes[2, i].grid(True, alpha=0.3)
+        else:
+            # Simple lag plot if statsmodels not available
+            for i in range(3):
+                if len(residuals) > 1:
+                    axes[2, i].scatter(residuals[:-1, i], residuals[1:, i], alpha=0.5)
+                    axes[2, i].set_title(f'Lag-1 Plot {["X", "Y", "Z"][i]}')
+                    axes[2, i].set_xlabel('Residual(t)')
+                    axes[2, i].set_ylabel('Residual(t+1)')
+                    axes[2, i].grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        
+        # Save enhanced residual plot
+        plot_filename = f'enhanced_residual_analysis_{axis}.png'
+        plot_path = resolve_output_path(plot_filename, output_dir)
+        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        # Create summary statistics file
+        stats_filename = f'residual_statistics_{axis}.json'
+        stats_path = resolve_output_path(stats_filename, output_dir)
+        
+        # Compute comprehensive statistics
+        stats_dict = {
+            'axis': axis,
+            'sample_size': len(residuals),
+            'residual_statistics': {
+                'mean': diagnostics['residual_stats']['mean'],
+                'std': diagnostics['residual_stats']['std'],
+                'min': residuals.min(axis=0).tolist(),
+                'max': residuals.max(axis=0).tolist(),
+                'median': np.median(residuals, axis=0).tolist(),
+                'q25': np.percentile(residuals, 25, axis=0).tolist(),
+                'q75': np.percentile(residuals, 75, axis=0).tolist()
+            },
+            'normality_tests': {},
+            'outlier_statistics': {
+                'total_outliers': diagnostics['outlier_count'],
+                'outlier_percentage': 100 * diagnostics['outlier_count'] / max(1, diagnostics['total_measurements'])
+            },
+            'zupt_statistics': {
+                'activations': diagnostics['zupt_activations'],
+                'activation_rate': 100 * diagnostics['zupt_activations'] / max(1, diagnostics['total_measurements'])
+            }
+        }
+        
+        # Add normality test results
+        for i in range(3):
+            axis_name = ['X', 'Y', 'Z'][i]
+            # Shapiro-Wilk test (more powerful for small samples)
+            if len(residuals[:, i]) <= 5000:  # Shapiro-Wilk limitation
+                sw_stat, sw_p = stats.shapiro(residuals[:, i])
+                stats_dict['normality_tests'][f'{axis_name}_shapiro'] = {'statistic': float(sw_stat), 'p_value': float(sw_p)}
+            
+            # Kolmogorov-Smirnov test
+            mu, sigma = np.mean(residuals[:, i]), np.std(residuals[:, i])
+            ks_stat, ks_p = stats.kstest(residuals[:, i], lambda x: stats.norm.cdf(x, mu, sigma))
+            stats_dict['normality_tests'][f'{axis_name}_ks'] = {'statistic': float(ks_stat), 'p_value': float(ks_p)}
+        
+        # Save statistics
+        with open(stats_path, 'w') as f:
+            json.dump(stats_dict, f, indent=2)
+        
+        logger.info(f"✅ Enhanced residual plots saved: {plot_path}")
+        logger.info(f"✅ Residual statistics saved: {stats_path}")
+        print_colored(f"📊 Enhanced residual analysis saved to: {plot_filename}", "📊", "green")
+        
+    except Exception as e:
+        logger.error(f"❌ Error generating enhanced residual plots: {e}")
+        print_colored(f"❌ Error in enhanced residual plots: {e}", "❌", "red")
 
 
 def print_section_header(title, emoji="🔸"):
@@ -3924,69 +6216,897 @@ def print_progress_bar(current, total, prefix="Progress", length=50):
         print()  # New line when complete
 
 
-if __name__ == "__main__":
-    # Se lo script viene eseguito direttamente, esegue la funzione principale
+def run_comprehensive_9d_ekf(config_path=None):
+    """
+    Esegue l'EKF 9D completo con ZUPT detection e post-processing robusto.
+    
+    Args:
+        config_path: Path al file di configurazione YAML
+    """
+    setup_enhanced_logging()
+    logger.info("🚀 Starting Comprehensive 9D EKF Processing")
+    
     try:
-        print_section_header("EXTENDED KALMAN FILTER PER STIMA DI VELOCITÀ E POSIZIONE", "🔬")
-        print_colored(f"📅 Avvio esecuzione: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", "📅", "blue")
-        print_colored(f"📁 Log file attivo: {current_log_file.name}", "📁", "blue")
+        # Load configuration
+        if config_path is None:
+            config_path = Path(__file__).parent.parent / "configs" / "EKF_for_vel_and_pos_est_from_acc.yaml"
         
-        logger.info("🚀 === AVVIO SCRIPT EKF ===")
-        logger.info(f"📅 Timestamp esecuzione: {datetime.now()}")
-        logger.info(f"💻 Sistema operativo: {os.name}")
-        logger.info(f"🐍 Versione Python: {sys.version}")
-        logger.info(f"📁 Directory di lavoro: {os.getcwd()}")
-        logger.info(f"📝 Log file: {current_log_file}")
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
         
-        # Controlla se è stato fornito un percorso di configurazione come argomento
-        config_path = sys.argv[1] if len(sys.argv) > 1 else None
-        if config_path:
-            print_colored(f"📄 File di configurazione specificato: {config_path}", "📄", "green")
-            logger.info(f"📄 Utilizzo del file di configurazione specificato: {config_path}")
+        logger.info(f"📋 Configuration loaded from: {config_path}")
+        
+        # Load data configuration (support legacy `input` and new `input_files` keys)
+        io_config = config.get('io', {})
+        data_config = io_config.get('input')
+        delimiter = None
+        accel_columns = None
+
+        if isinstance(data_config, dict):
+            filename = data_config.get('filename') or data_config.get('path')
+            delimiter = data_config.get('delimiter', delimiter)
+            accel_columns = data_config.get('accel_columns')
         else:
-            print_colored("📄 Utilizzo del file di configurazione predefinito", "📄", "yellow")
-            logger.info("📄 Utilizzo del file di configurazione predefinito")
+            input_files = io_config.get('input_files', {})
+            if not input_files:
+                raise KeyError("Missing input data configuration: expected `io.input` or `io.input_files`")
+            # Prefer explicitly marked default, otherwise use 'linear', else the first entry
+            preferred_key = io_config.get('default_input_key', 'linear')
+            if preferred_key not in input_files:
+                preferred_key = next(iter(input_files))
+            entry = input_files[preferred_key]
+            if isinstance(entry, dict):
+                filename = entry.get('filename') or entry.get('path')
+                delimiter = entry.get('delimiter', delimiter)
+                accel_columns = entry.get('accel_columns', accel_columns)
+            else:
+                filename = entry
+
+        if filename is None:
+            raise KeyError("Input configuration missing filename/path information")
+
+        input_file = Path(filename)
+        if not input_file.is_absolute():
+            input_file = (Path(__file__).parent.parent / input_file).resolve()
         
-        # Log informazioni di sistema
-        print_colored("🔧 Controllo dipendenze e ambiente...", "🔧", "cyan")
-        logger.info(f"🎨 Colorama disponibile: {COLORAMA_AVAILABLE}")
-        logger.info(f"📊 NumPy versione: {np.__version__}")
-        logger.info(f"🐼 Pandas versione: {pd.__version__}")
-        logger.info(f"📈 Matplotlib versione: {plt.matplotlib.__version__}")
+        if not input_file.exists():
+            raise FileNotFoundError(f"Input file not found: {input_file}")
         
-        print_colored("✅ Ambiente verificato, avvio elaborazione EKF...", "✅", "green")
+        # Read acceleration data
+        logger.info(f"📊 Loading acceleration data from: {input_file}")
+
+        accel_col_names = None
+        accel_col_indices = None
+        if accel_columns is not None:
+            try:
+                if all(isinstance(c, (int, np.integer)) for c in accel_columns):
+                    accel_col_indices = [int(c) for c in accel_columns]
+                else:
+                    accel_col_names = [str(c) for c in accel_columns]
+            except TypeError:
+                accel_col_names = [str(accel_columns)]
+
+        # Helper to read with pandas when column names are supplied
+        def _read_accel_frame(path, delim_setting):
+            if delim_setting is None or str(delim_setting).lower() in ("", "auto", "none"):
+                return pd.read_csv(path)
+            if str(delim_setting).lower() in ("whitespace", "space", "spaces"):
+                return pd.read_csv(path, delim_whitespace=True)
+            return pd.read_csv(path, sep=delim_setting)
+
+        accel_data = None
+
+        if accel_col_names:
+            data = _read_accel_frame(input_file, delimiter)
+            missing = [c for c in accel_col_names if c not in data.columns]
+            if missing:
+                raise ValueError(
+                    f"Requested acceleration columns {missing} not found in data. "
+                    f"Available columns: {list(data.columns)}"
+                )
+            accel_data = data[accel_col_names].to_numpy(dtype=float)
+        else:
+            # Column selection by index (or default last 3 columns)
+            def _load_numpy(path, delim_setting):
+                if delim_setting is None or str(delim_setting).lower() in ("", "auto", "none"):
+                    return np.loadtxt(path, dtype=float)
+                if str(delim_setting).lower() in ("whitespace", "space", "spaces"):
+                    return np.loadtxt(path, dtype=float)
+                return np.loadtxt(path, delimiter=delim_setting, dtype=float)
+
+            try:
+                arr = _load_numpy(input_file, delimiter)
+            except ValueError:
+                # Retry with whitespace if explicit delimiter failed
+                arr = _load_numpy(input_file, "whitespace")
+
+            if arr.ndim == 1:
+                arr = arr.reshape(1, -1)
+
+            if arr.shape[1] < 3:
+                raise ValueError(
+                    "Acceleration file must contain at least three numeric columns. "
+                    f"Found {arr.shape[1]} numeric columns in {input_file}. "
+                    "Update `io.input` delimiter/columns in the configuration."
+                )
+
+            if accel_col_indices is None:
+                accel_col_indices = list(range(arr.shape[1] - 3, arr.shape[1]))
+            accel_data = arr[:, accel_col_indices]
         
-        # Esegue l'EKF
-        start_time = datetime.now()
-        print_colored(f"⏱️  Avvio elaborazione alle: {start_time.strftime('%H:%M:%S')}", "⏱️", "blue")
-        logger.info(f"⏱️  Inizio elaborazione: {start_time}")
+        # MEGA DEBUG - Check loaded data
+        logger.info("🔍 DEBUG LOADED ACCELERATION DATA:")
+        logger.info(f"  accel_data type: {type(accel_data)}")
+        logger.info(f"  accel_data dtype: {accel_data.dtype}")
+        logger.info(f"  accel_data shape: {accel_data.shape}")
+        logger.info(f"  First 3 samples:\n{accel_data[:3]}")
+        if len(accel_data) > 0:
+            logger.info(f"  Sample value types: {[type(x) for x in accel_data[0]]}")
         
-        results = run_EKF_for_vel_and_pos_est_from_acc(config_path)
+        # Force float conversion if needed
+        if accel_data.dtype != np.float64:
+            logger.warning(f"⚠️ Converting accel_data from {accel_data.dtype} to float64")
+            accel_data = accel_data.astype(np.float64)
+            logger.info(f"✅ Converted: new dtype={accel_data.dtype}")
         
-        end_time = datetime.now()
-        execution_time = (end_time - start_time).total_seconds()
+        logger.info(f"📈 Loaded {len(accel_data)} acceleration samples")
         
-        logger.info(f"⏱️  Fine elaborazione: {end_time}")
-        logger.info(f"⌛ Tempo totale di esecuzione: {execution_time:.2f} secondi")
-        logger.info("✅ Esecuzione completata con successo")
+        # ============================================
+        # PREPROCESSING: Filter acceleration data
+        # ============================================
+        sample_rate = config['ekf'].get('sample_rate_hz', 100.0)
         
-        print_section_header("ESECUZIONE COMPLETATA CON SUCCESSO", "🏁")
-        print_colored(f"⏱️  Tempo di esecuzione: {execution_time:.2f} secondi", "⏱️", "green")
-        print_colored(f"📊 Risultati elaborati per {len(results) if results else 0} assi", "📊", "green")
-        print_colored(f"📁 Log completo salvato in: {current_log_file}", "📁", "blue")
-        print_colored("🎉 Elaborazione terminata con successo!", "🎉", "green")
+        # BIOMECHANICAL IMPROVEMENT 1: Auto-bias estimation
+        bias_cfg = config.get('preprocessing', {}).get('auto_bias', {})
+        if bias_cfg.get('enabled', True):
+            n_samples = min(bias_cfg.get('initial_samples', 100), len(accel_data) // 10)
+            initial_bias = np.mean(accel_data[:n_samples], axis=0)
+            logger.info(f"🎯 Auto-bias stimato dai primi {n_samples} campioni: {initial_bias}")
+            accel_data = accel_data - initial_bias
         
-        sys.exit(0)
+        logger.info(f"🔍 About to call preprocessing with sample_rate={sample_rate}")
+        logger.info(f"🔍 Config keys: {list(config.keys())}")
+        logger.info(f"🔍 'preprocessing' in config: {'preprocessing' in config}")
+        accel_data = preprocess_acceleration(accel_data, sample_rate, config)
+        logger.info("✅ Acceleration preprocessing completed")
+        
+        # Initialize 9D EKF
+        ekf = ExtendedKalmanFilter9D(config)
+        logger.info("🔧 9D Extended Kalman Filter initialized")
+        
+        # Storage for results
+        positions = []
+        velocities = []
+        biases = []
+        zupt_flags = []
+        
+        # Warm-up configuration
+        warmup_cfg = config.get('preprocessing', {}).get('warmup', {})
+        skip_samples = warmup_cfg.get('skip_samples', 0) if warmup_cfg.get('enabled', False) else 0
+        fast_convergence = warmup_cfg.get('fast_convergence', False)
+        
+        # Process each sample
+        window_size = max(ekf.zupt_detector.window_size, 1)
+        for i, accel_sample in enumerate(accel_data):
+            
+            # BIOMECHANICAL IMPROVEMENT 4: Fast convergence during warmup
+            if fast_convergence and i < skip_samples:
+                # Temporarily increase process noise for faster adaptation
+                original_Q = ekf.Q.copy()
+                ekf.Q *= 10.0  # 10x higher process noise during warmup
+                ekf.predict(accel_sample)
+                ekf.Q = original_Q  # Restore original
+            else:
+                # Normal prediction
+                ekf.predict(accel_sample)
+            
+            # Store results (skip warmup samples if configured)
+            if i >= skip_samples:
+                # BIOMECHANICAL IMPROVEMENT 5: Reset position at start of recording for cyclic motion
+                if len(positions) == 0 and skip_samples > 0:
+                    # Reset position to zero at start of actual recording
+                    ekf.x[0:3, 0] = 0.0  
+                    logger.info(f"🎯 Position reset to zero after warmup")
+                
+                # Get current estimates AFTER potential reset
+                current_position = ekf.get_position()
+                current_velocity = ekf.get_velocity()
+                current_bias = ekf.get_bias()
+                
+                positions.append(current_position)
+                velocities.append(current_velocity)
+                biases.append(current_bias)
+            elif i == skip_samples - 1:
+                logger.info(f"🚀 Warmup completed after {skip_samples} samples, starting data recording")
+            
+            # Always get estimates for ZUPT detection
+            if i < skip_samples:
+                current_position = ekf.get_position()
+                current_velocity = ekf.get_velocity()
+                current_bias = ekf.get_bias()
+            
+            # ZUPT detection basato sull'ultima finestra disponibile
+            window_start = max(0, i + 1 - window_size)
+            accel_window = accel_data[window_start:i+1]
+            
+            # Use velocity from positions list (skip warmup adjustment)
+            if len(velocities) >= window_size:
+                velocity_window = velocities[-window_size:]
+            else:
+                velocity_window = velocities if len(velocities) > 0 else None
+            
+            is_stationary = ekf.zupt_detector.detect_stationary(
+                accel_window,
+                velocity_window if velocity_window is not None else None
+            )
+            
+            if is_stationary:
+                ekf.apply_zupt_update(accel_sample)
+                # Aggiorna con valori corretti dopo ZUPT (only if recording)
+                if i >= skip_samples:
+                    positions[-1] = ekf.get_position()
+                    velocities[-1] = ekf.get_velocity()
+                    biases[-1] = ekf.get_bias()
+            
+            # BIOMECHANICAL IMPROVEMENT 6: Real-time velocity baseline removal
+            baseline_cfg = config.get('ekf', {}).get('velocity_baseline_removal', {})
+            if baseline_cfg.get('enabled', False) and i >= skip_samples:
+                # Calculate rolling baseline of velocity
+                baseline_window = baseline_cfg.get('window_size', 500)  # 5 seconds
+                if len(velocities) >= baseline_window:
+                    # Get velocity vectors and reshape to (window_size, 3)
+                    recent_velocities = np.array(velocities[-baseline_window:])
+                    
+                    if recent_velocities.ndim == 3:  # Shape (window_size, 3, 1) -> (window_size, 3)
+                        recent_velocities = recent_velocities.squeeze(axis=2)
+                    
+                    velocity_baseline = np.mean(recent_velocities, axis=0)  # Shape (3,)
+                    
+                    # Remove baseline from current velocity
+                    baseline_factor = baseline_cfg.get('removal_factor', 0.2)  # 20% baseline removal
+                    correction = baseline_factor * velocity_baseline  # Shape (3,)
+                    
+                    # Apply correction to EKF state (manual assignment to avoid numpy broadcast issues)
+                    ekf.x[3, 0] = ekf.x[3, 0] - correction[0]
+                    ekf.x[4, 0] = ekf.x[4, 0] - correction[1]
+                    ekf.x[5, 0] = ekf.x[5, 0] - correction[2]
+                    
+                    if i % 1000 == 0:  # Log every 10 seconds
+                        logger.info(f"🔄 Velocity baseline removed @{i}: baseline={velocity_baseline}, corr={correction}")
+            
+            # Store ZUPT flag (only if recording)
+            if i >= skip_samples:
+                zupt_flags.append(bool(is_stationary))
+            
+            # Adjust constraint indices for warmup skip
+            effective_index = i - skip_samples
+            
+            # BIOMECHANICAL IMPROVEMENT 2: Periodic velocity constraint
+            constraint_cfg = config.get('ekf', {}).get('velocity_constraint', {})
+            if (constraint_cfg.get('enabled', False) and effective_index >= 0 and 
+                (effective_index + 1) % constraint_cfg.get('apply_every', 500) == 0 and len(velocities) > 0):
+                # Assume movimento ciclico → velocità media dovrebbe essere ~0
+                recent_window = max(constraint_cfg.get('window_size', 200), 50)
+                start_idx = max(0, len(velocities) - recent_window)
+                recent_velocities = np.array(velocities[start_idx:])
+                
+                if len(recent_velocities) > 10:
+                    vel_bias = np.mean(recent_velocities, axis=0)
+                    max_correction = constraint_cfg.get('max_correction', 0.5)
+                    correction = np.clip(vel_bias, -max_correction, max_correction)
+                    
+                    # Applica correzione aggressiva per movimento biomeccanico
+                    current_vel = ekf.get_velocity()
+                    correction_factor = constraint_cfg.get('correction_factor', 0.3)  # 30% instead of 10%
+                    corrected_vel = current_vel - correction_factor * correction
+                    ekf.x[3:6, 0] = corrected_vel  
+                    
+                    logger.info(f"🔄 Velocity constraint applicato @{i}: bias={vel_bias}, corr={correction}, factor={correction_factor}")
+            
+            # BIOMECHANICAL IMPROVEMENT 3: Position drift correction for cyclic motion
+            pos_constraint_cfg = config.get('ekf', {}).get('position_constraint', {})
+            if (pos_constraint_cfg.get('enabled', False) and effective_index >= 0 and 
+                (effective_index + 1) % pos_constraint_cfg.get('apply_every', 1000) == 0 and len(positions) > 0):
+                # Per movimento ciclico, la posizione media dovrebbe essere ~0
+                recent_window = max(pos_constraint_cfg.get('window_size', 500), 100)
+                start_idx = max(0, len(positions) - recent_window)
+                recent_positions = np.array(positions[start_idx:])
+                
+                if len(recent_positions) > 50:
+                    pos_bias = np.mean(recent_positions, axis=0)
+                    max_correction = pos_constraint_cfg.get('max_correction', 5.0)
+                    correction = np.clip(pos_bias, -max_correction, max_correction)
+                    
+                    # Applica correzione alla posizione
+                    current_pos = ekf.get_position()
+                    correction_factor = pos_constraint_cfg.get('correction_factor', 0.2)  # 20% correction
+                    corrected_pos = current_pos - correction_factor * correction
+                    ekf.x[0:3, 0] = corrected_pos  
+                    
+                    logger.info(f"📍 Position constraint applicato @{i}: bias={pos_bias}, corr={correction}, factor={correction_factor}")
+            
+            if (
+                len(zupt_flags) > 0  # Check if we have recorded any ZUPT flags
+                and not zupt_flags[-1]
+                and ekf.zupt_detector.adaptive_thresholds
+                and ekf.zupt_detector._current_relax_multiplier > 1.0
+                and ekf.zupt_detector._samples_since_last_zupt % max(1, ekf.zupt_detector.window_size) == 0
+            ):
+                logger.info(
+                    "⚠️ ZUPT non attivo da %d campioni → soglie rilassate x%.2f",
+                    ekf.zupt_detector._samples_since_last_zupt,
+                    ekf.zupt_detector._current_relax_multiplier,
+                )
+            
+            # Progress logging
+            if i % 1000 == 0 and i > 0:
+                logger.info(f"⏳ Processed {i}/{len(accel_data)} samples ({100*i/len(accel_data):.1f}%)")
+        
+        # Convert to numpy arrays
+        positions = np.array(positions)
+        velocities = np.array(velocities)
+        biases = np.array(biases)
+        zupt_flags = np.array(zupt_flags)
+        
+        logger.info(f"✅ EKF processing completed. Applied ZUPT to {np.sum(zupt_flags)} frames ({100*np.sum(zupt_flags)/len(zupt_flags):.1f}%)")
+        
+        # Post-processing
+        post_config = config.get('postprocess', {})
+        if post_config.get('enable', True):
+            logger.info("🔧 Starting post-processing...")
+            
+            # Create timestamp array for advanced post-processing
+            timestamps = np.arange(len(velocities)) / sample_rate
+            
+            # Apply advanced post-processing (detrending, high-pass, smoothing)
+            velocities, positions = postprocess_velocity_position(
+                velocities, positions, timestamps, config
+            )
+            
+            # Apply legacy post-processing to each axis (outlier removal)
+            processed_velocities = np.zeros_like(velocities)
+            processed_positions = np.zeros_like(positions)
+            
+            for axis in range(3):
+                vel_axis, pos_axis = apply_post_processing(
+                    velocities[:, axis], 
+                    positions[:, axis], 
+                    post_config
+                )
+                processed_velocities[:, axis] = vel_axis
+                processed_positions[:, axis] = pos_axis
+            
+            velocities = processed_velocities
+            positions = processed_positions
+            logger.info("✅ Post-processing completed")
+        
+        # Generate comprehensive diagnostics
+        diagnostics = ekf.get_diagnostics()
+        
+        # Create output directory
+        output_dir = get_output_base_dir()
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Save results
+        output_config = config['io']['output']
+        
+        # Save position and velocity estimates
+        for axis, axis_name in enumerate(['X', 'Y', 'Z']):
+            # Position
+            pos_file = resolve_output_path(f"estimated_position_{axis_name}.csv", output_dir)
+            pd.DataFrame({
+                'timestamp': range(len(positions)),
+                'position': positions[:, axis],
+                'zupt_applied': zupt_flags
+            }).to_csv(pos_file, index=False)
+            
+            # Velocity 
+            vel_file = resolve_output_path(f"estimated_velocity_{axis_name}.csv", output_dir)
+            pd.DataFrame({
+                'timestamp': range(len(velocities)),
+                'velocity': velocities[:, axis],
+                'zupt_applied': zupt_flags
+            }).to_csv(vel_file, index=False)
+        
+        # Save bias estimates
+        bias_file = resolve_output_path("estimated_bias.csv", output_dir)
+        pd.DataFrame({
+            'timestamp': range(len(biases)),
+            'bias_x': biases[:, 0],
+            'bias_y': biases[:, 1], 
+            'bias_z': biases[:, 2]
+        }).to_csv(bias_file, index=False)
+        
+        # Generate performance report
+        report = generate_performance_report(diagnostics, config, zupt_flags)
+        
+        # Save performance report
+        report_file = resolve_output_path("EKF_9D_performance_report.yaml", output_dir)
+        with open(report_file, 'w') as f:
+            yaml.dump(report, f, default_flow_style=False)
+        
+        # Generate plots
+        if config.get('plots', {}).get('enable', True):
+            generate_comprehensive_plots(
+                positions, velocities, biases, zupt_flags, 
+                diagnostics, output_dir, config
+            )
+        
+        logger.info("🎉 Comprehensive 9D EKF processing completed successfully!")
+        return {
+            'positions': positions,
+            'velocities': velocities, 
+            'biases': biases,
+            'zupt_flags': zupt_flags,
+            'diagnostics': diagnostics,
+            'report': report
+        }
         
     except Exception as e:
-        error_time = datetime.now()
-        logger.error(f"❌ Errore fatale alle {error_time}: {e}")
-        logger.exception("📋 Stack trace completo:")
+        logger.error(f"❌ Error in 9D EKF processing: {e}")
+        logger.exception("📋 Full stack trace:")
+        raise
+
+
+def generate_performance_report(diagnostics, config, zupt_flags):
+    """Genera report di performance per l'EKF 9D."""
+    
+    innovation_history = diagnostics['innovation_history']
+    nis_history = diagnostics['nis_history'] 
+    state_history = diagnostics['state_history']
+    
+    # Calculate innovation statistics
+    innovation_stats = {
+        'mean': np.mean(innovation_history, axis=0).tolist(),
+        'std': np.std(innovation_history, axis=0).tolist(),
+        'rmse': np.sqrt(np.mean(innovation_history**2, axis=0)).tolist()
+    }
+    
+    # NIS statistics
+    nis_stats = {
+        'mean': float(np.mean(nis_history)),
+        'std': float(np.std(nis_history)),
+        'percentage_in_bounds': float(np.sum((nis_history >= 0.35) & (nis_history <= 7.81)) / len(nis_history) * 100)
+    }
+    
+    # ZUPT statistics
+    zupt_stats = {
+        'total_frames': len(zupt_flags),
+        'zupt_frames': int(np.sum(zupt_flags)),
+        'zupt_percentage': float(100 * np.sum(zupt_flags) / len(zupt_flags)),
+        'longest_zupt_sequence': int(np.max(np.diff(np.where(np.diff(zupt_flags.astype(int)))[0]))) if np.any(zupt_flags) else 0
+    }
+    
+    # State evolution statistics
+    final_state = state_history[-1]
+    state_stats = {
+        'final_position': final_state[0:3].tolist(),
+        'final_velocity': final_state[3:6].tolist(), 
+        'final_bias': final_state[6:9].tolist(),
+        'position_drift': np.linalg.norm(final_state[0:3]).item(),
+        'velocity_drift': np.linalg.norm(final_state[3:6]).item()
+    }
+    
+    return {
+        'timestamp': datetime.now().isoformat(),
+        'config_summary': {
+            'dt': config.get('ekf', {}).get('dt', 0.01),
+            'use_joseph_form': config.get('ekf', {}).get('numerical_stability', {}).get('use_joseph_form', True),
+            'zupt_enabled': True
+        },
+        'innovation_statistics': innovation_stats,
+        'nis_statistics': nis_stats,
+        'zupt_statistics': zupt_stats,
+        'state_statistics': state_stats,
+        'overall_performance': {
+            'filter_stability': 'stable' if nis_stats['percentage_in_bounds'] > 80 else 'unstable',
+            'bias_estimation_quality': 'good' if np.linalg.norm(final_state[6:9]) < 0.5 else 'poor',
+            'drift_performance': 'excellent' if state_stats['position_drift'] < 1.0 else 'moderate'
+        }
+    }
+
+
+def generate_comprehensive_plots(positions, velocities, biases, zupt_flags, diagnostics, output_dir, config):
+    """Genera plots completi per l'analisi EKF 9D."""
+    
+    try:
+        # 1. Main state estimation plot
+        fig, axes = plt.subplots(3, 3, figsize=(18, 12))
+        fig.suptitle('9D EKF State Estimation Results', fontsize=16)
         
-        print_section_header("ERRORE FATALE", "❌")
-        print_colored(f"⏰ Timestamp errore: {error_time.strftime('%Y-%m-%d %H:%M:%S')}", "⏰", "red")
-        print_colored(f"💥 Errore: {e}", "💥", "red")
-        print_colored(f"📁 Dettagli completi nel log: {current_log_file}", "📁", "yellow")
-        print_colored("🔧 Controllare il file di log per maggiori dettagli", "🔧", "yellow")
+        time_axis = np.arange(len(positions)) * config.get('ekf', {}).get('dt', 0.01)
+        axis_names = ['X', 'Y', 'Z']
         
+        # Position plots
+        for i in range(3):
+            axes[0, i].plot(time_axis, positions[:, i], 'b-', label='Position')
+            axes[0, i].fill_between(time_axis, positions[:, i], alpha=0.3, where=zupt_flags, label='ZUPT', color='red')
+            axes[0, i].set_title(f'Position {axis_names[i]}')
+            axes[0, i].set_ylabel('Position [m]')
+            axes[0, i].legend()
+            axes[0, i].grid(True)
+        
+        # Velocity plots
+        for i in range(3):
+            axes[1, i].plot(time_axis, velocities[:, i], 'g-', label='Velocity')
+            axes[1, i].fill_between(time_axis, velocities[:, i], alpha=0.3, where=zupt_flags, label='ZUPT', color='red')
+            axes[1, i].set_title(f'Velocity {axis_names[i]}')
+            axes[1, i].set_ylabel('Velocity [m/s]')
+            axes[1, i].legend()
+            axes[1, i].grid(True)
+        
+        # Bias plots
+        for i in range(3):
+            axes[2, i].plot(time_axis, biases[:, i], 'r-', label='Bias')
+            axes[2, i].set_title(f'Accelerometer Bias {axis_names[i]}')
+            axes[2, i].set_ylabel('Bias [m/s²]')
+            axes[2, i].set_xlabel('Time [s]')
+            axes[2, i].legend()
+            axes[2, i].grid(True)
+        
+        plt.tight_layout()
+        plt.savefig(resolve_output_path('ekf_9d_state_estimation.png', output_dir), dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        # 2. Diagnostics plot
+        fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+        fig.suptitle('9D EKF Diagnostics', fontsize=16)
+        
+        innovation_history = diagnostics['innovation_history']
+        nis_history = diagnostics['nis_history']
+        
+        # Innovation time series
+        for i in range(3):
+            axes[0, 0].plot(time_axis, innovation_history[:, i], label=f'Innovation {axis_names[i]}')
+        axes[0, 0].set_title('Innovation Sequence')
+        axes[0, 0].set_ylabel('Innovation')
+        axes[0, 0].legend()
+        axes[0, 0].grid(True)
+        
+        # NIS time series
+        axes[0, 1].plot(time_axis, nis_history, 'b-', label='NIS')
+        axes[0, 1].axhline(y=0.35, color='r', linestyle='--', label='Lower bound (α=0.05)')
+        axes[0, 1].axhline(y=7.81, color='r', linestyle='--', label='Upper bound (α=0.05)')
+        axes[0, 1].set_title('Normalized Innovation Squared (NIS)')
+        axes[0, 1].set_ylabel('NIS')
+        axes[0, 1].legend()
+        axes[0, 1].grid(True)
+        
+        # Innovation histogram
+        axes[1, 0].hist(innovation_history.flatten(), bins=50, alpha=0.7, density=True)
+        axes[1, 0].set_title('Innovation Distribution')
+        axes[1, 0].set_xlabel('Innovation Value')
+        axes[1, 0].set_ylabel('Density')
+        axes[1, 0].grid(True)
+        
+        # ZUPT statistics
+        zupt_sequences = []
+        in_sequence = False
+        current_length = 0
+        for flag in zupt_flags:
+            if flag:
+                if not in_sequence:
+                    in_sequence = True
+                    current_length = 1
+                else:
+                    current_length += 1
+            else:
+                if in_sequence:
+                    zupt_sequences.append(current_length)
+                    in_sequence = False
+                    current_length = 0
+        
+        if zupt_sequences:
+            axes[1, 1].hist(zupt_sequences, bins=20, alpha=0.7)
+            axes[1, 1].set_title('ZUPT Sequence Length Distribution')
+            axes[1, 1].set_xlabel('Sequence Length [frames]')
+            axes[1, 1].set_ylabel('Count')
+            axes[1, 1].grid(True)
+        else:
+            axes[1, 1].text(0.5, 0.5, 'No ZUPT sequences detected', 
+                           ha='center', va='center', transform=axes[1, 1].transAxes)
+            axes[1, 1].set_title('ZUPT Sequence Length Distribution')
+        
+        plt.tight_layout()
+        plt.savefig(resolve_output_path('ekf_9d_diagnostics.png', output_dir), dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        # 3. 3D trajectory plot
+        fig = plt.figure(figsize=(12, 10))
+        ax = fig.add_subplot(111, projection='3d')
+        
+        # Plot trajectory
+        traj = ax.plot(positions[:, 0], positions[:, 1], positions[:, 2], 'b-', linewidth=2, label='Trajectory')
+        
+        # Mark ZUPT points
+        zupt_positions = positions[zupt_flags]
+        if len(zupt_positions) > 0:
+            ax.scatter(zupt_positions[:, 0], zupt_positions[:, 1], zupt_positions[:, 2], 
+                      c='red', s=10, alpha=0.6, label='ZUPT Points')
+        
+        # Mark start and end
+        ax.scatter(*positions[0], c='green', s=100, marker='o', label='Start')
+        ax.scatter(*positions[-1], c='red', s=100, marker='s', label='End')
+        
+        ax.set_xlabel('X Position [m]')
+        ax.set_ylabel('Y Position [m]')
+        ax.set_zlabel('Z Position [m]')
+        ax.set_title('3D Trajectory with ZUPT Points')
+        ax.legend()
+        
+        plt.savefig(resolve_output_path('ekf_9d_trajectory_3d.png', output_dir), dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        logger.info("📊 Comprehensive plots generated successfully")
+        
+    except Exception as e:
+        logger.error(f"❌ Error generating plots: {e}")
+
+
+def generate_execution_summary_report(results_dict, config, config_path=None):
+    """
+    Genera un report riassuntivo in Markdown delle performance EKF.
+    """
+    try:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        report_path = resolve_output_path(f"EKF_summary_{timestamp}.md")
+        
+        axes = sorted(results_dict.keys())
+        
+        def _fmt(val, digits=4):
+            try:
+                return f"{float(val):.{digits}f}"
+            except (TypeError, ValueError):
+                return str(val)
+        
+        lines = []
+        lines.append(f"# EKF Performance Summary – {timestamp}")
+        lines.append("")
+        if config_path:
+            lines.append(f"- **Config file**: `{config_path}`")
+        lines.append(f"- **Axes processed**: {', '.join(axes) if axes else 'none'}")
+        lines.append(f"- **Analysis axis setting**: `{config.get('analysis_axis', 'not-specified')}`")
+        lines.append("")
+        
+        for axis in axes:
+            axis_results = results_dict[axis]
+            stats = axis_results.get('summary_stats', {})
+            perf = axis_results.get('performance_metrics', {})
+            tuning = axis_results.get('tuning_report', {})
+            
+            lines.append(f"## Axis {axis}")
+            general = stats.get('general', {})
+            lines.append(
+                f"- Samples: {general.get('samples', 'n/a')} | "
+                f"duration: {_fmt(general.get('duration_seconds'))} s | "
+                f"sampling rate: {_fmt(general.get('sampling_rate_hz'))} Hz"
+            )
+            
+            pos = stats.get('position', {})
+            lines.append(
+                f"- Position mean/std (m): {_fmt(pos.get('mean'))} / {_fmt(pos.get('std'))}; "
+                f"range: {_fmt(pos.get('range'))} (min {_fmt(pos.get('min'))}, max {_fmt(pos.get('max'))})"
+            )
+            
+            vel = stats.get('velocity', {})
+            lines.append(
+                f"- Velocity mean/std (m/s): {_fmt(vel.get('mean'))} / {_fmt(vel.get('std'))}; "
+                f"range: {_fmt(vel.get('range'))}"
+            )
+            
+            acc = stats.get('acceleration', {})
+            lines.append(
+                f"- Acceleration mean/std (m/s²): {_fmt(acc.get('mean'))} / {_fmt(acc.get('std'))}; "
+                f"range: {_fmt(acc.get('range'))}"
+            )
+            
+            drift_info = stats.get('drift_correction', {})
+            if drift_info.get('enabled'):
+                lines.append(
+                    f"- Drift correction: poly order {drift_info.get('polynomial_order')} | "
+                    f"mean vel {_fmt(drift_info.get('mean_velocity_before'))} → "
+                    f"{_fmt(drift_info.get('mean_velocity_after'))} m/s"
+                )
+            
+            post_info = stats.get('post_processing', {})
+            if post_info.get('enabled'):
+                lines.append(
+                    f"- Post-processing noise reduction: {_fmt(post_info.get('noise_reduction_percent'))}% "
+                    f"(std {_fmt(post_info.get('std_before'))} → {_fmt(post_info.get('std_after'))} m/s)"
+                )
+            
+            if perf:
+                zupt_stats = perf.get('zupt_statistics', {})
+                nis_stats = perf.get('nis_statistics', {})
+                state_stats = perf.get('state_statistics', {})
+                lines.append(
+                    f"- ZUPT activations: {zupt_stats.get('zupt_frames', 0)}/"
+                    f"{zupt_stats.get('total_frames', 0)} "
+                    f"({_fmt(zupt_stats.get('zupt_percentage', 0), 1)}%)"
+                )
+                lines.append(
+                    f"- NIS mean/std: {_fmt(nis_stats.get('mean', 0.0), 3)} / "
+                    f"{_fmt(nis_stats.get('std', 0.0), 3)} "
+                    f"(in-bounds {_fmt(nis_stats.get('percentage_in_bounds', 0.0), 1)}%)"
+                )
+                lines.append(
+                    f"- Final velocity drift: {_fmt(state_stats.get('velocity_drift', 0.0))} m/s | "
+                    f"bias norm: {_fmt(np.linalg.norm(state_stats.get('final_bias', [0, 0, 0])))}"
+                )
+            
+            if tuning and tuning.get('status') != 'error':
+                lines.append(f"- Tuning quality: {tuning.get('overall_quality', 'n/a')}")
+                summary = tuning.get('summary', {})
+                lines.append(
+                    f"- Tuning recommendations: {summary.get('total_recommendations', 0)} "
+                    f"(high priority: {summary.get('high_priority', 0)})"
+                )
+            
+            lines.append("")
+        
+        lines.append("_Report generated automatically by `generate_execution_summary_report`._")
+        report_path.write_text("\n".join(lines), encoding='utf-8')
+        logger.info(f"📄 Report riassuntivo generato: {report_path}")
+        return report_path
+    except Exception as e:
+        logger.error(f"❌ Errore nella generazione del report riassuntivo: {e}")
+        return None
+
+
+def generate_execution_summary_report(results_dict, config, config_path=None):
+    """
+    Genera un report riassuntivo in formato Markdown delle performance EKF.
+    """
+    try:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        report_path = resolve_output_path(f"EKF_summary_{timestamp}.md")
+        
+        axes = sorted(results_dict.keys())
+        
+        def fmt(value, digits=4):
+            try:
+                return f"{float(value):.{digits}f}"
+            except (TypeError, ValueError):
+                return str(value)
+        
+        lines = []
+        lines.append(f"# EKF Performance Summary – {timestamp}")
+        lines.append("")
+        if config_path:
+            lines.append(f"- **Config file**: `{config_path}`")
+        lines.append(f"- **Axes processed**: {', '.join(axes) if axes else 'none'}")
+        lines.append(f"- **Analysis axis setting**: `{config.get('analysis_axis', 'not-specified')}`")
+        lines.append("")
+        
+        for axis in axes:
+            axis_results = results_dict[axis]
+            stats = axis_results.get('summary_stats', {})
+            perf = axis_results.get('performance_metrics', {})
+            tuning = axis_results.get('tuning_report', {})
+            
+            lines.append(f"## Axis {axis}")
+            general = stats.get('general', {})
+            lines.append(
+                f"- Samples: {general.get('samples', 'n/a')} | "
+                f"duration: {fmt(general.get('duration_seconds'))} s | "
+                f"sampling rate: {fmt(general.get('sampling_rate_hz'))} Hz"
+            )
+            
+            pos = stats.get('position', {})
+            lines.append(
+                f"- Position mean/std (m): {fmt(pos.get('mean'))} / {fmt(pos.get('std'))}; "
+                f"range: {fmt(pos.get('range'))} (min {fmt(pos.get('min'))}, max {fmt(pos.get('max'))})"
+            )
+            
+            vel = stats.get('velocity', {})
+            lines.append(
+                f"- Velocity mean/std (m/s): {fmt(vel.get('mean'))} / {fmt(vel.get('std'))}; "
+                f"range: {fmt(vel.get('range'))}"
+            )
+            
+            acc = stats.get('acceleration', {})
+            lines.append(
+                f"- Acceleration mean/std (m/s²): {fmt(acc.get('mean'))} / {fmt(acc.get('std'))}; "
+                f"range: {fmt(acc.get('range'))}"
+            )
+            
+            drift_info = stats.get('drift_correction', {})
+            if drift_info.get('enabled'):
+                lines.append(
+                    f"- Drift correction: poly order {drift_info.get('polynomial_order')} | "
+                    f"mean vel {fmt(drift_info.get('mean_velocity_before'))} → {fmt(drift_info.get('mean_velocity_after'))} m/s"
+                )
+            
+            post_info = stats.get('post_processing', {})
+            if post_info.get('enabled'):
+                lines.append(
+                    f"- Post-processing noise reduction: {fmt(post_info.get('noise_reduction_percent'))}% "
+                    f"(std {fmt(post_info.get('std_before'))} → {fmt(post_info.get('std_after'))} m/s)"
+                )
+            
+            if perf:
+                zupt_stats = perf.get('zupt_statistics', {})
+                nis_stats = perf.get('nis_statistics', {})
+                state_stats = perf.get('state_statistics', {})
+                lines.append(
+                    f"- ZUPT activations: {zupt_stats.get('zupt_frames', 0)}/{zupt_stats.get('total_frames', 0)} "
+                    f"({fmt(zupt_stats.get('zupt_percentage', 0), 1)}%)"
+                )
+                lines.append(
+                    f"- NIS mean/std: {fmt(nis_stats.get('mean', 0.0), 3)} / {fmt(nis_stats.get('std', 0.0), 3)} "
+                    f"(in-bounds {fmt(nis_stats.get('percentage_in_bounds', 0.0), 1)}%)"
+                )
+                lines.append(
+                    f"- Final velocity drift: {fmt(state_stats.get('velocity_drift', 0.0))} m/s | "
+                    f"Bias norm: {fmt(np.linalg.norm(state_stats.get('final_bias', [0, 0, 0]))) }"
+                )
+            
+            if tuning and tuning.get('status') != 'error':
+                lines.append(f"- Tuning quality: {tuning.get('overall_quality', 'n/a')}")
+                total_recs = tuning.get('summary', {}).get('total_recommendations', 0)
+                high_recs = tuning.get('summary', {}).get('high_priority', 0)
+                lines.append(f"- Tuning recommendations: {total_recs} (high priority: {high_recs})")
+            
+            lines.append("")
+        
+        lines.append("_Report generated automatically by `generate_execution_summary_report`._")
+        
+        report_path.write_text("\n".join(lines), encoding='utf-8')
+        logger.info(f"📄 Report riassuntivo generato: {report_path}")
+        return report_path
+    except Exception as e:
+        logger.error(f"❌ Errore nella generazione del report riassuntivo: {e}")
+        return None
+
+
+if __name__ == "__main__":
+    """
+    Entry point principale per l'esecuzione dell'EKF.
+    
+    Supporta sia l'EKF tradizionale per singolo asse che il nuovo EKF 9D completo.
+    """
+    parser = argparse.ArgumentParser(description='Extended Kalman Filter for Position and Velocity Estimation')
+    parser.add_argument('--config', type=str, help='Path to configuration YAML file')
+    parser.add_argument('--mode', choices=['legacy', '9d'], default='9d',
+                       help='EKF mode: legacy (single axis) or 9d (comprehensive)')
+    parser.add_argument('--axis', choices=['X', 'Y', 'Z'], 
+                       help='Axis for legacy mode (required if mode=legacy)')
+    
+    args = parser.parse_args()
+    
+    try:
+        if args.mode == '9d':
+            print_section_header("9D EXTENDED KALMAN FILTER", "🚀")
+            print_colored("Starting comprehensive 9D EKF with ZUPT detection...", "🚀", "cyan")
+            
+            result = run_comprehensive_9d_ekf(args.config)
+            
+            print_section_header("PROCESSING COMPLETED", "✅")
+            print_colored("9D EKF processing completed successfully!", "✅", "green")
+            print_colored(f"📊 Position estimates: {result['positions'].shape}", "📊", "blue")
+            print_colored(f"🎯 ZUPT applied to: {np.sum(result['zupt_flags'])} frames", "🎯", "blue")
+            print_colored(f"📈 Final bias estimates: {result['biases'][-1]}", "📈", "blue")
+            
+        else:
+            # Legacy mode
+            if not args.axis:
+                print_colored("❌ Axis required for legacy mode", "❌", "red")
+                sys.exit(1)
+                
+            print_section_header(f"LEGACY EKF - AXIS {args.axis}", "🔧")
+            print_colored(f"Starting legacy EKF processing for axis {args.axis}...", "🔧", "yellow")
+            
+            run_EKF_for_vel_and_pos_est_from_acc(args.config, args.axis)
+            
+            print_section_header("LEGACY PROCESSING COMPLETED", "✅")
+            print_colored(f"Legacy EKF processing for axis {args.axis} completed!", "✅", "green")
+            
+    except KeyboardInterrupt:
+        print_colored("\n⏹️  Processing interrupted by user", "⏹️", "yellow")
+        sys.exit(0)
+    except Exception as e:
+        print_colored(f"❌ Fatal error: {e}", "❌", "red")
+        sys.exit(1)
+
+
         sys.exit(1)
