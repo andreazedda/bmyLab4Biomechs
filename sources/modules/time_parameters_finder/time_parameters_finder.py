@@ -3,10 +3,59 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import List, Dict, Any, Tuple
+import sys
+import os
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from scipy.signal import find_peaks
+
+
+# ==========================
+# 0. Logger dedicato
+# ==========================
+
+class DebugLogger:
+    """Logger dedicato per output di debug senza inquinare la console."""
+    def __init__(self, log_path: str | None = None):
+        if log_path is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            log_path = f"debug_squat_analysis_{timestamp}.log"
+        self.log_path = log_path
+        self.file = open(log_path, 'w', encoding='utf-8')
+        self.console = True  # Set to False to suppress console output
+        
+    def log(self, msg: str, console: bool = False):
+        """Scrivi su file e opzionalmente su console."""
+        self.file.write(msg + "\n")
+        self.file.flush()
+        if console or self.console:
+            print(msg)
+    
+    def close(self):
+        self.file.close()
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, *args):
+        self.close()
+
+# Global logger instance
+_logger: DebugLogger | None = None
+
+def set_logger(logger: DebugLogger):
+    global _logger
+    _logger = logger
+
+def log(msg: str, console: bool = False):
+    """Utility per logging."""
+    if _logger:
+        _logger.log(msg, console)
+    else:
+        print(msg)
 
 
 # ==========================
@@ -132,13 +181,13 @@ def load_euler_from_csv(
     
     # DEBUG: Data loading diagnostics
     if debug:
-        print(f"\n[DATA] N samples: {len(t)}, duration: {t[-1]-t[0]:.2f} s")
+        log(f"\n[DATA] N samples: {len(t)}, duration: {t[-1]-t[0]:.2f} s")
         dt = np.diff(t)
-        print(f"[DATA] dt mean={dt.mean():.4f}s, std={dt.std():.4f}s, min={dt.min():.4f}s, max={dt.max():.4f}s")
-        print(f"[DATA] ang ranges (deg):")
+        log(f"[DATA] dt mean={dt.mean():.4f}s, std={dt.std():.4f}s, min={dt.min():.4f}s, max={dt.max():.4f}s")
+        log(f"[DATA] ang ranges (deg):")
         for i, name in enumerate(["ang1", "ang2", "ang3"]):
             col = angles[:, i]
-            print(f"   {name}: min={col.min():.1f}, max={col.max():.1f}, Δ={col.max()-col.min():.1f}")
+            log(f"   {name}: min={col.min():.1f}, max={col.max():.1f}, Δ={col.max()-col.min():.1f}")
         
         # Sanity check
         assert (dt > 0).all(), "⚠️  ERROR: Timestamp non strettamente crescente!"
@@ -146,7 +195,7 @@ def load_euler_from_csv(
     return t, angles
 
 
-def select_principal_axis(angles: np.ndarray) -> int:
+def select_principal_axis(angles: np.ndarray, debug: bool = True) -> int:
     """
     Seleziona automaticamente l’asse con rotazione principale
     usando la massima escursione (max-min).
@@ -157,12 +206,14 @@ def select_principal_axis(angles: np.ndarray) -> int:
     return principal_axis
 
 
-def axis_coherence_diagnostics(angles: np.ndarray, principal_axis: int) -> Dict[str, float]:
+def axis_coherence_diagnostics(angles: np.ndarray, principal_axis: int, debug: bool = True) -> Dict[str, float]:
     """
     Calcola correlazioni tra asse principale e gli altri due, come diagnostica.
     """
     main = angles[:, principal_axis]
     corrs = {}
+    if debug:
+        log(f"\n[AXIS CORR] Correlations with principal axis:")
     for idx, name in zip(range(3), ["ang1", "ang2", "ang3"]):
         if idx == principal_axis:
             continue
@@ -172,6 +223,8 @@ def axis_coherence_diagnostics(angles: np.ndarray, principal_axis: int) -> Dict[
         else:
             corr = float(np.corrcoef(main, other)[0, 1])
         corrs[f"corr_principal_vs_{name}"] = corr
+        if debug:
+            log(f"   {name}: r={corr:.3f}")
     return corrs
 
 
@@ -201,9 +254,9 @@ def estimate_stand_baseline(
     sigma_stand = max(std_start, std_end, 1e-3)  # evito zero
 
     if debug:
-        print(f"\n[BASELINE] Stand estimation window: {w:.2f}s")
-        print(f"[BASELINE] mu_start={mu_start:.2f}°, mu_end={mu_end:.2f}°")
-        print(f"[BASELINE] mu_stand={mu_stand:.2f}°, σ_stand={sigma_stand:.2f}°")
+        log(f"\n[BASELINE] Stand estimation window: {w:.2f}s")
+        log(f"[BASELINE] mu_start={mu_start:.2f}°, mu_end={mu_end:.2f}°")
+        log(f"[BASELINE] mu_stand={mu_stand:.2f}°, σ_stand={sigma_stand:.2f}°")
 
     return mu_stand, sigma_stand
 
@@ -228,7 +281,7 @@ def estimate_bottom_level(
         idx_ext = np.argmax(np.abs(theta - mu_stand))
         mu_bottom = float(theta[idx_ext])
         if debug:
-            print(f"[BASELINE] ⚠️  No stable points, using max deviation: mu_bottom={mu_bottom:.2f}°")
+            log(f"[BASELINE] ⚠️  No stable points, using max deviation: mu_bottom={mu_bottom:.2f}°")
         return mu_bottom
 
     dist = np.abs(theta_stable - mu_stand)
@@ -236,7 +289,7 @@ def estimate_bottom_level(
         idx_ext = np.argmax(np.abs(theta - mu_stand))
         mu_bottom = float(theta[idx_ext])
         if debug:
-            print(f"[BASELINE] ⚠️  Empty dist, using max deviation: mu_bottom={mu_bottom:.2f}°")
+            log(f"[BASELINE] ⚠️  Empty dist, using max deviation: mu_bottom={mu_bottom:.2f}°")
         return mu_bottom
 
     thr = dist_factor * np.std(dist) if dist.size > 1 else dist[0]
@@ -246,17 +299,17 @@ def estimate_bottom_level(
         idx = np.argmax(dist)
         mu_bottom = float(theta_stable[idx])
         if debug:
-            print(f"[BASELINE] ⚠️  No points beyond threshold, using farthest: mu_bottom={mu_bottom:.2f}°")
+            log(f"[BASELINE] ⚠️  No points beyond threshold, using farthest: mu_bottom={mu_bottom:.2f}°")
         return mu_bottom
 
     mu_bottom = float(np.mean(bottom_points))
     
     if debug:
         delta = abs(mu_bottom - mu_stand)
-        print(f"[BASELINE] mu_bottom={mu_bottom:.2f}°, Δ={delta:.2f}° from stand")
-        print(f"[BASELINE] Bottom points used: {bottom_points.size} (stable: {theta_stable.size})")
+        log(f"[BASELINE] mu_bottom={mu_bottom:.2f}°, Δ={delta:.2f}° from stand")
+        log(f"[BASELINE] Bottom points used: {bottom_points.size} (stable: {theta_stable.size})")
         if delta < 20.0:
-            print(f"[BASELINE] ⚠️  WARNING: Small Δ between stand/bottom ({delta:.1f}°) may cause classification issues!")
+            log(f"[BASELINE] ⚠️  WARNING: Small Δ between stand/bottom ({delta:.1f}°) may cause classification issues!")
     
     return mu_bottom
 
@@ -328,6 +381,133 @@ def classify_phases(
 
 
 # ==========================
+# 4b. Rough repetition counter (detector semplice)
+# ==========================
+
+def rough_rep_counter(
+    t: np.ndarray,
+    theta: np.ndarray,
+    prominence: float = 5.0,
+    debug: bool = True,
+) -> Tuple[int, np.ndarray, Dict[str, Any]]:
+    """
+    Detector semplice basato su minimi angolari (buca) per avere
+    un numero di ripetizioni "golden reference" indipendente dall'algoritmo a fasi.
+    """
+    # Assumendo squat come sequenza di valli (buca)
+    inverted = -theta
+    peaks, props = find_peaks(inverted, prominence=prominence)
+    
+    if debug:
+        log(f"\n[ROUGH] Rough detector: {len(peaks)} minimi (buca) con prominence={prominence}°")
+        if len(peaks) > 0:
+            log(f"[ROUGH] Peak times: {t[peaks].tolist()}")
+            log(f"[ROUGH] Peak angles: {theta[peaks].tolist()}")
+    
+    return len(peaks), peaks, props
+
+
+# ==========================
+# 5. Consistency check: velocity-phase alignment
+# ==========================
+
+def check_velocity_phase_consistency(
+    omega: np.ndarray,
+    phases: List[Phase],
+    vel_thresh: float,
+    debug: bool = True,
+) -> Dict[str, float]:
+    """
+    Verifica che la label ECC/CONC sia coerente con il segno della velocità.
+    Ritorna percentuali di coerenza.
+    """
+    phases = np.array(phases)
+    fast_mask = np.abs(omega) >= vel_thresh
+
+    ecc_mask = fast_mask & (phases == Phase.ECC)
+    conc_mask = fast_mask & (phases == Phase.CONC)
+
+    ecc_pos = (omega[ecc_mask] > 0).mean() if ecc_mask.any() else np.nan
+    conc_neg = (omega[conc_mask] < 0).mean() if conc_mask.any() else np.nan
+
+    if debug:
+        log(f"\n[CONSIST] Velocity-Phase consistency check:")
+        log(f"[CONSIST] ECC: {ecc_pos*100:.1f}% dei campioni con ω>0 (dovrebbe essere >90%)")
+        log(f"[CONSIST] CONC: {conc_neg*100:.1f}% dei campioni con ω<0 (dovrebbe essere >90%)")
+        if ecc_pos < 0.9 or conc_neg < 0.9:
+            log(f"[CONSIST] ⚠️  WARNING: Low consistency! Check vel_thresh or sign convention.")
+    
+    return {"ecc_consistency": ecc_pos, "conc_consistency": conc_neg}
+
+
+# ==========================
+# 5a. Scan raw phase pattern
+# ==========================
+
+def scan_raw_phase_pattern(
+    t: np.ndarray,
+    phases: List[Phase],
+    debug: bool = True,
+) -> Dict[str, Any]:
+    """
+    Detector di pattern ECC per capire se mancano BOTTOM/CONC.
+    Utile per diagnosticare buca non riconosciuta.
+    """
+    phases_arr = np.array(phases)
+    N = len(phases_arr)
+    idx = 0
+    count_ecc = 0
+    ecc_with_bottom = 0
+    ecc_with_conc = 0
+    
+    patterns = []
+    
+    while idx < N:
+        try:
+            pos = list(phases_arr[idx:]).index(Phase.ECC)
+        except ValueError:
+            break
+        idx += pos
+        
+        # Da ECC prova a vedere se nei successivi X campioni appare BOTTOM e CONC
+        lookahead = 500  # da tarare in funzione di fs
+        window = phases_arr[idx:min(idx+lookahead, N)]
+        has_bottom = Phase.BOTTOM in window
+        has_conc = Phase.CONC in window
+        
+        count_ecc += 1
+        if has_bottom:
+            ecc_with_bottom += 1
+        if has_conc:
+            ecc_with_conc += 1
+        
+        patterns.append({
+            "ecc_idx": idx,
+            "ecc_time": float(t[idx]),
+            "has_bottom": bool(has_bottom),
+            "has_conc": bool(has_conc),
+        })
+        
+        idx += 1
+    
+    if debug:
+        log(f"\n[SCAN] Raw phase pattern scan:")
+        log(f"[SCAN] ECC found {count_ecc} times")
+        log(f"[SCAN]   with BOTTOM: {ecc_with_bottom}/{count_ecc} ({100*ecc_with_bottom/count_ecc:.1f}%)" if count_ecc > 0 else "[SCAN]   with BOTTOM: 0/0")
+        log(f"[SCAN]   with CONC: {ecc_with_conc}/{count_ecc} ({100*ecc_with_conc/count_ecc:.1f}%)" if count_ecc > 0 else "[SCAN]   with CONC: 0/0")
+        
+        if count_ecc > 0 and (ecc_with_bottom < count_ecc or ecc_with_conc < count_ecc):
+            log(f"[SCAN] ⚠️  Some ECC without BOTTOM/CONC → baseline/threshold issue!")
+    
+    return {
+        "count_ecc": count_ecc,
+        "ecc_with_bottom": ecc_with_bottom,
+        "ecc_with_conc": ecc_with_conc,
+        "patterns": patterns,
+    }
+
+
+# ==========================
 # 5b. Filtro temporale delle fasi
 # ==========================
 
@@ -350,13 +530,13 @@ def segment_stats(t: np.ndarray, phases: List[Phase], debug: bool = True) -> Dic
         i = j
     
     if debug:
-        print(f"\n[SEG] Phase segment statistics:")
+        log(f"\n[SEG] Phase segment statistics:")
         for p in Phase:
             arr = np.array(segs[p])
             if arr.size == 0:
-                print(f"   {p.name:8s}: 0 segments")
+                log(f"   {p.name:8s}: 0 segments")
             else:
-                print(f"   {p.name:8s}: n={arr.size:3d}, mean={arr.mean():.3f}s, "
+                log(f"   {p.name:8s}: n={arr.size:3d}, mean={arr.mean():.3f}s, "
                       f"min={arr.min():.3f}s, max={arr.max():.3f}s, std={arr.std():.3f}s")
     return segs
 
@@ -365,21 +545,29 @@ def filter_short_phases(
     t: np.ndarray,
     phases: List[Phase],
     min_duration: float = 0.1,
-) -> List[Phase]:
+    debug: bool = False,
+) -> Tuple[List[Phase], Dict[str, Any]]:
     """
     Rimuove segmenti di fase troppo corti sostituendoli con la fase adiacente più comune.
+    Ritorna anche statistiche sul filtro per diagnostica.
     """
-    phases = np.array(phases, dtype=object)
-    N = len(phases)
+    phases_arr = np.array(phases, dtype=object)
+    N = len(phases_arr)
+    
+    changed = 0
+    seg_count = {p: 0 for p in Phase}
+    seg_short = {p: 0 for p in Phase}
     
     i = 0
     while i < N:
-        current_phase = phases[i]
+        current_phase = phases_arr[i]
         
         # Trova la fine del segmento corrente
         j = i
-        while j < N and phases[j] == current_phase:
+        while j < N and phases_arr[j] == current_phase:
             j += 1
+        
+        seg_count[current_phase] += 1
         
         # Calcola durata del segmento
         if j - i > 0:
@@ -387,9 +575,11 @@ def filter_short_phases(
             
             # Se troppo corto, sostituisci con fase vicina
             if seg_duration < min_duration and (i > 0 or j < N):
+                seg_short[current_phase] += 1
+                
                 # Scegli la fase prima o dopo (la più comune)
-                before_phase = phases[i-1] if i > 0 else None
-                after_phase = phases[j] if j < N else None
+                before_phase = phases_arr[i-1] if i > 0 else None
+                after_phase = phases_arr[j] if j < N else None
                 
                 if before_phase is not None and after_phase is not None:
                     # Usa la fase più comune tra prima e dopo
@@ -401,11 +591,26 @@ def filter_short_phases(
                 else:
                     replacement = current_phase
                 
-                phases[i:j] = replacement
+                phases_arr[i:j] = replacement
+                changed += (j - i)
         
         i = j
     
-    return phases.tolist()
+    stats = {
+        "changed_samples": changed,
+        "total_samples": N,
+        "changed_fraction": changed / N if N > 0 else 0.0,
+        "seg_count": seg_count,
+        "seg_short": seg_short,
+    }
+    
+    if debug:
+        log(f"\n[FILTER] Filter statistics:")
+        log(f"[FILTER] Changed samples: {changed}/{N} ({changed/N*100:.1f}%)")
+        for p in Phase:
+            log(f"[FILTER]   {p.name:8s}: seg={seg_count[p]}, short={seg_short[p]}")
+    
+    return phases_arr.tolist(), stats
 
 
 # ==========================
@@ -496,26 +701,26 @@ def segment_repetitions_with_segments(
     delle fasi per ogni ripetizione. Utile per plotting pulito e tabelle.
     """
     if debug:
-        print("\n" + "="*80)
-        print("🔍 [REP] segment_repetitions_with_segments STARTED")
-        print("="*80)
+        log("\n" + "="*80)
+        log("🔍 [REP] segment_repetitions_with_segments STARTED")
+        log("="*80)
     
     phases = np.array(phases)
     N = len(phases)
     
     if debug:
-        print(f"[REP] Total samples: {N}")
-        print(f"[REP] Time range: {t[0]:.3f}s to {t[-1]:.3f}s (duration: {t[-1]-t[0]:.3f}s)")
-        print(f"[REP] Min phase duration threshold: {min_phase_duration}s")
+        log(f"[REP] Total samples: {N}")
+        log(f"[REP] Time range: {t[0]:.3f}s to {t[-1]:.3f}s (duration: {t[-1]-t[0]:.3f}s)")
+        log(f"[REP] Min phase duration threshold: {min_phase_duration}s")
         
         # Count phase distribution
         from collections import Counter
         phase_counts = Counter(phases)
-        print(f"[REP] Phase distribution:")
+        log(f"[REP] Phase distribution:")
         for phase_val in [Phase.STAND, Phase.ECC, Phase.BOTTOM, Phase.CONC, Phase.UNKNOWN]:
             count = phase_counts.get(phase_val, 0)
             pct = 100.0 * count / N if N > 0 else 0.0
-            print(f"   {phase_val.name:8s}: {count:6d} samples ({pct:5.1f}%)")
+            log(f"   {phase_val.name:8s}: {count:6d} samples ({pct:5.1f}%)")
     
     reps: List[RepTime] = []
     segments: List[RepSegments] = []
@@ -570,12 +775,20 @@ def segment_repetitions_with_segments(
         T_con = seg_time(idx_conc_start, idx_conc_end)
         T_top = seg_time(idx_top_start, idx_top_end)
 
+        # Constraints for minimum phase durations (more relaxed)
+        MIN_BOTTOM = 0.05  # Minimum bottom phase duration (seconds)
+        MIN_TOP = 0.03     # Minimum top phase duration (seconds)
+
         # DEBUG: Track all candidate patterns
         reason = "OK"
         if T_ecc < min_phase_duration:
             reason = f"SKIP: ecc too short ({T_ecc:.3f}s < {min_phase_duration:.3f}s)"
         elif T_con < min_phase_duration:
             reason = f"SKIP: conc too short ({T_con:.3f}s < {min_phase_duration:.3f}s)"
+        elif T_buca < MIN_BOTTOM:
+            reason = f"SKIP: bottom too short ({T_buca:.3f}s < {MIN_BOTTOM:.3f}s)"
+        elif T_top < MIN_TOP:
+            reason = f"SKIP: top too short ({T_top:.3f}s < {MIN_TOP:.3f}s)"
         
         debug_reps.append({
             "t_ecc": (t[idx_ecc_start], t[idx_ecc_end]),
@@ -608,22 +821,22 @@ def segment_repetitions_with_segments(
         rep_number += 1
 
     if debug:
-        print(f"\n[REP] Candidate patterns found: {len(debug_reps)}")
-        print(f"[REP] ✅ Accepted repetitions: {len(reps)}")
-        print(f"[REP] ❌ Rejected patterns: {len(debug_reps) - len(reps)}")
+        log(f"\n[REP] Candidate patterns found: {len(debug_reps)}")
+        log(f"[REP] ✅ Accepted repetitions: {len(reps)}")
+        log(f"[REP] ❌ Rejected patterns: {len(debug_reps) - len(reps)}")
         
         if len(debug_reps) > 0:
-            print(f"\n[REP] Detailed pattern analysis:")
+            log(f"\n[REP] Detailed pattern analysis:")
             for k, r in enumerate(debug_reps, 1):
                 status = "✅" if r['reason'] == "OK" else "❌"
-                print(f"   {status} Pattern {k}: {r['reason']}")
-                print(f"      T_ecc={r['T_ecc']:.3f}s, T_buca={r['T_buca']:.3f}s, "
+                log(f"   {status} Pattern {k}: {r['reason']}")
+                log(f"      T_ecc={r['T_ecc']:.3f}s, T_buca={r['T_buca']:.3f}s, "
                       f"T_con={r['T_con']:.3f}s, T_top={r['T_top']:.3f}s")
-                print(f"      Time: ECC[{r['t_ecc'][0]:.2f},{r['t_ecc'][1]:.2f}], "
+                log(f"      Time: ECC[{r['t_ecc'][0]:.2f},{r['t_ecc'][1]:.2f}], "
                       f"BOT[{r['t_bottom'][0]:.2f},{r['t_bottom'][1]:.2f}], "
                       f"CONC[{r['t_conc'][0]:.2f},{r['t_conc'][1]:.2f}]")
         
-        print("="*80 + "\n")
+        log("="*80 + "\n")
 
     return reps, segments
 
@@ -959,6 +1172,140 @@ def plot_squat_phases_by_rep(
 # 9. Ottimizzazione adattiva dei parametri
 # ==========================
 
+def validate_pipeline_consistency(
+    t: np.ndarray,
+    phases: List[Phase],
+    rep_times: List[RepTime],
+    rep_segments: List[RepSegments],
+    debug: bool = True,
+) -> None:
+    """
+    Validazione strutturale della pipeline: invarianti e sanity check.
+    """
+    if debug:
+        log(f"\n[VALID] Pipeline consistency validation:")
+    
+    # 1) lunghezze coerenti
+    assert len(t) == len(phases), f"[VALID] ❌ ERROR: t e phases hanno lunghezze diverse ({len(t)} vs {len(phases)})"
+    if debug:
+        log(f"[VALID] ✅ Lengths match: t={len(t)}, phases={len(phases)}")
+    
+    # 2) ogni RepTime ha segmenti coerenti
+    for k, (rt, seg) in enumerate(zip(rep_times, rep_segments), 1):
+        # ricomponi tempi da segmenti e confronta
+        T_ecc_seg = seg.t_ecc_end - seg.t_ecc_start
+        T_con_seg = seg.t_conc_end - seg.t_conc_start
+        T_buca_seg = seg.t_bottom_end - seg.t_bottom_start
+        T_top_seg = seg.t_top_end - seg.t_top_start
+
+        def close(a, b, tol=1e-3):
+            return abs(a-b) <= tol
+
+        assert close(rt.T_ecc, T_ecc_seg), f"[VALID] ❌ [REP {k}] T_ecc mismatch: {rt.T_ecc:.3f} vs {T_ecc_seg:.3f}"
+        assert close(rt.T_con, T_con_seg), f"[VALID] ❌ [REP {k}] T_con mismatch: {rt.T_con:.3f} vs {T_con_seg:.3f}"
+        assert close(rt.T_buca, T_buca_seg), f"[VALID] ❌ [REP {k}] T_buca mismatch: {rt.T_buca:.3f} vs {T_buca_seg:.3f}"
+        assert close(rt.T_top, T_top_seg), f"[VALID] ❌ [REP {k}] T_top mismatch: {rt.T_top:.3f} vs {T_top_seg:.3f}"
+
+        # 3) ordini temporali
+        assert seg.t_ecc_start < seg.t_ecc_end <= seg.t_bottom_start <= seg.t_bottom_end \
+               <= seg.t_conc_start <= seg.t_conc_end <= seg.t_top_start <= seg.t_top_end, \
+               f"[VALID] ❌ [REP {k}] ordine temporale non valido"
+    
+    if debug:
+        log(f"[VALID] ✅ All {len(rep_times)} repetitions validated successfully")
+
+
+def dump_rep_time_table(rep_times: List[RepTime], debug: bool = True) -> None:
+    """
+    Tabella dettagliata dei tempi delle fasi per ogni ripetizione.
+    """
+    if not rep_times:
+        if debug:
+            log("[REPTAB] No reps")
+        return
+    
+    if debug:
+        log(f"\n[REPTAB] Repetition timing table:")
+        log("[REPTAB] Rep |  T_ecc  T_buca   T_con   T_top   T_TUT")
+        log("[REPTAB] ----|" + "-" * 42)
+        for k, r in enumerate(rep_times, 1):
+            log(f"[REPTAB] {k:3d} | {r.T_ecc:6.3f} {r.T_buca:7.3f} {r.T_con:7.3f} {r.T_top:7.3f} {r.T_TUT:7.3f}")
+
+
+def local_param_sweep(
+    t: np.ndarray,
+    theta: np.ndarray,
+    omega: np.ndarray,
+    mu_stand: float,
+    best_vel: float,
+    best_dur: float,
+    expected_reps: int | None = None,
+    debug: bool = True,
+) -> None:
+    """
+    Sweep sistematico 'intorno' al best per capire sensibilità parametri.
+    """
+    vel_values = [best_vel * f for f in [0.5, 0.75, 1.0, 1.25, 1.5]]
+    dur_values = [max(0.05, best_dur + d) for d in [-0.04, -0.02, 0.0, 0.02, 0.04]]
+
+    if debug:
+        log(f"\n[SWEEP] Local parameter sweep around best params:")
+        log(f"[SWEEP] Best: vel={best_vel:.1f} deg/s, dur={best_dur:.2f}s")
+        if expected_reps:
+            log(f"[SWEEP] Target reps: {expected_reps}")
+        log(f"[SWEEP] vel_thresh | min_dur | n_reps")
+        log(f"[SWEEP] " + "-" * 35)
+    
+    for v in vel_values:
+        for d in dur_values:
+            mu_bottom = estimate_bottom_level(theta, omega, mu_stand, v, debug=False)
+            phases, _ = classify_phases(t, theta, mu_stand, mu_bottom, v)
+            phases, _ = filter_short_phases(t, phases, min_duration=d*0.5, debug=False)
+            reps, _ = segment_repetitions_with_segments(t, phases, min_phase_duration=d, debug=False)
+            marker = " ✅" if (expected_reps and len(reps) == expected_reps) else ""
+            if debug:
+                log(f"[SWEEP] {v:10.1f} | {d:7.2f} | {len(reps):6d}{marker}")
+
+
+def generate_synthetic_squat(
+    n_reps: int = 10,
+    fs: float = 100.0,
+    T_ecc: float = 0.5,
+    T_buca: float = 0.3,
+    T_con: float = 0.4,
+    T_top: float = 0.6,
+    noise_std: float = 1.0,
+    stand_angle: float = -90,
+    bottom_angle: float = -130,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Genera un segnale sintetico di squat con N ripetizioni "perfette".
+    Utile per test unitari e validazione algoritmo.
+    """
+    t_list = [0.0]
+    angles = []
+
+    def add_phase(T, start_angle, end_angle, n_steps):
+        tt = np.linspace(0, T, n_steps, endpoint=False)
+        if np.isclose(start_angle, end_angle):
+            vals = start_angle + np.zeros_like(tt)
+        else:
+            vals = np.linspace(start_angle, end_angle, n_steps, endpoint=False)
+        for dt, val in zip(tt, vals):
+            t_list.append(t_list[-1] + 1/fs)
+            angles.append(val + np.random.randn()*noise_std)
+
+    for _ in range(n_reps):
+        add_phase(T_ecc, stand_angle, bottom_angle, int(T_ecc*fs))
+        add_phase(T_buca, bottom_angle, bottom_angle, int(T_buca*fs))
+        add_phase(T_con, bottom_angle, stand_angle, int(T_con*fs))
+        add_phase(T_top, stand_angle, stand_angle, int(T_top*fs))
+
+    t = np.array(t_list[1:])
+    angles_arr = np.array(angles)
+    return t, angles_arr
+
+
 def optimize_parameters(
     t: np.ndarray,
     theta: np.ndarray,
@@ -1014,7 +1361,7 @@ def optimize_parameters(
         
         for min_duration in min_duration_candidates:
             phases, _ = classify_phases(t, theta_s, mu_stand, mu_bottom, vel_thresh, smooth_window)
-            phases = filter_short_phases(t, phases, min_duration=min_duration * 0.5)
+            phases, _ = filter_short_phases(t, phases, min_duration=min_duration * 0.5, debug=False)
             
             reps, _ = segment_repetitions_with_segments(t, phases, min_phase_duration=min_duration)
             n_reps = len(reps)
@@ -1106,9 +1453,10 @@ def analyze_squat_file_auto_axis(
     plot_path: str | None = None,
     debug: bool = True,
     export_debug_json: bool = True,
+    log_path: str | None = None,
 ) -> Dict[str, Any]:
     """
-    Pipeline completa con ottimizzazione adattiva:
+    Pipeline completa con ottimizzazione adattiva e logging dedicato:
     - legge file CSV grezzo
     - sceglie asse con rotazione principale
     - ottimizza automaticamente i parametri (se adaptive=True)
@@ -1116,6 +1464,7 @@ def analyze_squat_file_auto_axis(
     - classifica fasi
     - segmenta ripetizioni
     - calcola i 46 parametri temporali
+    - validazione completa con diagnostiche
     - (opzionale) genera plot con le zone temporali delle fasi
     
     Parameters:
@@ -1134,37 +1483,75 @@ def analyze_squat_file_auto_axis(
         Enable detailed debug logging (default: True)
     export_debug_json : bool
         Export debug JSON file (default: True)
+    log_path : str | None
+        Path to log file. If None, auto-generated with timestamp
     """
+    # Setup logger
+    if log_path is None:
+        import os
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        base = os.path.splitext(os.path.basename(path))[0]
+        log_path = f"debug_{base}_{timestamp}.log"
+    
+    logger = DebugLogger(log_path)
+    logger.console = False  # Only file logging by default
+    set_logger(logger)
+    
+    log("=" * 80, console=True)
+    log(f"🔍 SQUAT ANALYSIS DEBUG LOG", console=True)
+    log(f"File: {path}", console=True)
+    log(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", console=True)
+    if expected_reps:
+        log(f"🎯 Target repetitions: {expected_reps}", console=True)
+    log("=" * 80, console=True)
+    
+    # Load data
     t, angles = load_euler_from_csv(path, debug=debug)
     principal_axis = select_principal_axis(angles, debug=debug)
     theta = angles[:, principal_axis]
 
     axis_diag = axis_coherence_diagnostics(angles, principal_axis, debug=debug)
+    
+    # Rough detector (golden reference)
+    rough_n, rough_peaks, rough_props = rough_rep_counter(t, theta, prominence=5.0, debug=debug)
 
     # Adaptive parameter optimization
     if adaptive and (vel_thresh is None or min_phase_duration is None):
-        if debug:
-            print(f"\n[OPT] Starting parameter optimization...")
-            if expected_reps:
-                print(f"[OPT] Target: {expected_reps} repetitions")
+        log(f"\n[OPT] Starting parameter optimization...", console=True)
+        if expected_reps:
+            log(f"[OPT] Target: {expected_reps} repetitions", console=True)
         
         opt_vel_thresh, opt_min_duration, opt_diagnostics = optimize_parameters(
             t, theta, smooth_window, expected_reps=expected_reps
         )
         
-        if vel_thresh is None:
-            vel_thresh = opt_vel_thresh
-        if min_phase_duration is None:
-            min_phase_duration = opt_min_duration
+        # FORZA parametri best per n=expected_reps se esiste
+        if expected_reps is not None and opt_diagnostics is not None:
+            best_by_n = opt_diagnostics.get("best_by_n_reps", {})
+            if expected_reps in best_by_n:
+                br = best_by_n[expected_reps]
+                vel_thresh = br["vel_thresh"]
+                min_phase_duration = br["min_duration"]
+                log(f"[OPT] ⚡️ Forcing parameters for n={expected_reps}: vel_thresh={vel_thresh:.2f}, min_duration={min_phase_duration:.3f}", console=True)
+            else:
+                if vel_thresh is None:
+                    vel_thresh = opt_vel_thresh
+                if min_phase_duration is None:
+                    min_phase_duration = opt_min_duration
+                log(f"[OPT] ⚠️  No param set found for n={expected_reps}, using best overall", console=True)
+        else:
+            if vel_thresh is None:
+                vel_thresh = opt_vel_thresh
+            if min_phase_duration is None:
+                min_phase_duration = opt_min_duration
         
-        if debug:
-            print(f"[OPT] Selected: vel_thresh={vel_thresh:.2f} deg/s, min_duration={min_phase_duration:.3f}s")
-            if 'best_by_n_reps' in opt_diagnostics:
-                print(f"\n[OPT] Best parameter set for each n_reps:")
-                for n in sorted(opt_diagnostics['best_by_n_reps'].keys()):
-                    br = opt_diagnostics['best_by_n_reps'][n]
-                    print(f"   n={n}: vel={br['vel_thresh']:.1f} deg/s, dur={br['min_duration']:.2f}s, "
-                          f"score={br['score']:.2f}")
+        log(f"[OPT] Selected: vel_thresh={vel_thresh:.2f} deg/s, min_duration={min_phase_duration:.3f}s", console=True)
+        if 'best_by_n_reps' in opt_diagnostics:
+            log(f"\n[OPT] Best parameter set for each n_reps:")
+            for n in sorted(opt_diagnostics['best_by_n_reps'].keys()):
+                br = opt_diagnostics['best_by_n_reps'][n]
+                log(f"   n={n}: vel={br['vel_thresh']:.1f} deg/s, dur={br['min_duration']:.2f}s, "
+                      f"score={br['score']:.2f}")
     else:
         opt_diagnostics = None
         if vel_thresh is None:
@@ -1188,22 +1575,27 @@ def analyze_squat_file_auto_axis(
     )
     
     # DEBUG: Phase distribution before filtering
-    if debug:
-        from collections import Counter
-        phase_counts = Counter(phases)
-        tot = len(phases)
-        print(f"\n[PHASE] Phase counts (before filtering):")
-        for p in Phase:
-            count = phase_counts.get(p, 0)
-            pct = 100.0 * count / tot if tot > 0 else 0.0
-            print(f"   {p.name:8s}: {count:6d} ({pct:5.1f}%)")
+    from collections import Counter
+    phase_counts = Counter(phases)
+    tot = len(phases)
+    log(f"\n[PHASE] Phase counts (before filtering):")
+    for p in Phase:
+        count = phase_counts.get(p, 0)
+        pct = 100.0 * count / tot if tot > 0 else 0.0
+        log(f"   {p.name:8s}: {count:6d} ({pct:5.1f}%)")
+    
+    # Velocity-phase consistency check
+    vel_consistency = check_velocity_phase_consistency(omega, phases, vel_thresh, debug=debug)
+    
+    # Scan raw phase patterns
+    pattern_scan = scan_raw_phase_pattern(t, phases, debug=debug)
     
     # Apply temporal filtering to remove too-short phase segments
-    phases = filter_short_phases(t, phases, min_duration=min_phase_duration * 0.5)
+    # Usiamo direttamente min_phase_duration per essere più selettivi
+    phases, filter_stats = filter_short_phases(t, phases, min_duration=min_phase_duration, debug=debug)
     
     # DEBUG: Segment statistics
-    if debug:
-        segment_stats(t, phases, debug=True)
+    segment_stats(t, phases, debug=True)
 
     T_stand_init, T_stand_final = compute_stand_init_final(t, phases)
 
@@ -1213,12 +1605,59 @@ def analyze_squat_file_auto_axis(
         min_phase_duration=min_phase_duration,
         debug=debug,
     )
+    
+    # Validation
+    if len(rep_times) > 0:
+        try:
+            validate_pipeline_consistency(t, phases, rep_times, rep_segments, debug=debug)
+        except AssertionError as e:
+            log(f"\n[VALID] ❌ Validation failed: {e}", console=True)
+    
+    # Rep time table
+    dump_rep_time_table(rep_times, debug=debug)
+    
+    # Local sweep if optimized
+    if adaptive and expected_reps:
+        local_param_sweep(t, theta_s, omega, mu_stand, vel_thresh, min_phase_duration, 
+                         expected_reps=expected_reps, debug=debug)
 
     metrics = compute_time_metrics(
         rep_times=rep_times,
         T_stand_init=T_stand_init,
         T_stand_final=T_stand_final,
     )
+
+    # Quality flags
+    delta_stand_bottom = abs(mu_bottom - mu_stand)
+    ecc_vs_conc_symmetry = float(np.mean([r.T_ecc for r in rep_times]) / np.mean([r.T_con for r in rep_times])) if len(rep_times) > 0 else np.nan
+    phase_balance = float(min(phase_counts.values()) / max(phase_counts.values())) if max(phase_counts.values()) > 0 else 0.0
+    
+    quality_flags = {
+        "delta_stand_bottom_deg": float(delta_stand_bottom),
+        "ecc_vs_conc_symmetry": float(ecc_vs_conc_symmetry),
+        "phase_balance": float(phase_balance),
+        "filter_modified_frac": filter_stats["changed_fraction"],
+        "velocity_phase_consistency_ecc": float(vel_consistency["ecc_consistency"]),
+        "velocity_phase_consistency_conc": float(vel_consistency["conc_consistency"]),
+        "rough_detector_n_reps": rough_n,
+    }
+    
+    # Log quality summary
+    log(f"\n{'='*80}")
+    log(f"📊 QUALITY FLAGS SUMMARY")
+    log(f"{'='*80}")
+    log(f"Δ stand-bottom: {delta_stand_bottom:.1f}° {'✅' if delta_stand_bottom >= 20 else '⚠️  (< 20°)'}")
+    log(f"ECC/CONC symmetry: {ecc_vs_conc_symmetry:.2f} {'✅' if 0.5 <= ecc_vs_conc_symmetry <= 2.0 else '⚠️'}")
+    log(f"Phase balance: {phase_balance:.2f} {'✅' if phase_balance >= 0.3 else '⚠️  (low)'}")
+    log(f"Filter modified: {filter_stats['changed_fraction']*100:.1f}% {'✅' if filter_stats['changed_fraction'] < 0.3 else '⚠️  (> 30%)'}")
+    log(f"Vel-phase consistency ECC: {vel_consistency['ecc_consistency']*100:.1f}% {'✅' if vel_consistency['ecc_consistency'] > 0.9 else '⚠️  (< 90%)'}")
+    log(f"Vel-phase consistency CONC: {vel_consistency['conc_consistency']*100:.1f}% {'✅' if vel_consistency['conc_consistency'] > 0.9 else '⚠️  (< 90%)'}")
+    log(f"Rough detector: {rough_n} reps")
+    log(f"Phase-based detector: {len(rep_times)} reps")
+    if expected_reps:
+        match = "✅ MATCH" if len(rep_times) == expected_reps else f"❌ MISMATCH (expected {expected_reps})"
+        log(f"Expected: {expected_reps} reps → {match}")
+    log(f"{'='*80}\n")
 
     metrics["principal_axis"] = principal_axis  # 0:ang1, 1:ang2, 2:ang3
     metrics["axis_diagnostics"] = axis_diag
@@ -1233,6 +1672,10 @@ def analyze_squat_file_auto_axis(
         "smooth_window": int(smooth_window),
     }
     metrics["rep_segments"] = [seg.__dict__ for seg in rep_segments]
+    metrics["quality_flags"] = quality_flags
+    metrics["pattern_scan"] = pattern_scan
+    metrics["filter_stats"] = filter_stats
+    metrics["log_path"] = logger.log_path
     if opt_diagnostics is not None:
         metrics["optimization"] = opt_diagnostics
 
@@ -1248,6 +1691,7 @@ def analyze_squat_file_auto_axis(
             "N_rep": metrics["N_rep"],
             "rep_segments": metrics["rep_segments"],
             "axis_diagnostics": axis_diag,
+            "quality_flags": quality_flags,
         }
         if opt_diagnostics:
             debug_out["optimization_summary"] = {
@@ -1260,8 +1704,7 @@ def analyze_squat_file_auto_axis(
         debug_json_path = path.replace('.txt', '_debug.json')
         with open(debug_json_path, 'w') as f:
             json.dump(debug_out, f, indent=2)
-        if debug:
-            print(f"\n[DEBUG] Exported debug JSON to: {debug_json_path}")
+        log(f"\n[DEBUG] Exported debug JSON to: {debug_json_path}", console=True)
 
     if make_plot:
         axis_name = ["ang1", "ang2", "ang3"][principal_axis]
@@ -1274,7 +1717,10 @@ def analyze_squat_file_auto_axis(
             save_path=plot_path,
             show=(plot_path is None),
         )
-
+    
+    # Close logger
+    logger.close()
+    
     return metrics
 
 
@@ -1284,28 +1730,31 @@ def analyze_squat_file_auto_axis(
 
 if __name__ == "__main__":
     # file CSV con: timestamp_ms, ang1, ang2, ang3
-    path = "/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/time_parameters_finder/FILE_EULER2025-10-28-10-19-35.txt"
+    path = "/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/time_parameters_finder/FILE_EULER2025-10-28-10-23-31.txt"
 
     # USER: Set expected_reps if you know how many repetitions to expect
     # The algorithm will adapt to find exactly that number
-    EXPECTED_REPS = 10  # Change this or set to None for automatic detection
+    EXPECTED_REPS = 5  # Target: 5 ripetizioni pulite
     
-    print("🔍 Analyzing squat data with ADAPTIVE parameter optimization...\n")
+    print("🔍 Analyzing squat data with ADAPTIVE parameter optimization + FULL DEBUG PROTOCOL...\n")
     if EXPECTED_REPS is not None:
         print(f"🎯 Target: {EXPECTED_REPS} repetitions (algorithm will adapt to find this number)\n")
     
     metrics = analyze_squat_file_auto_axis(
         path=path,
-        smooth_window=51,
+        smooth_window=101,  # Smoothing più aggressivo per ridurre micro-oscillazioni
         adaptive=True,  # Enable adaptive optimization
         expected_reps=EXPECTED_REPS,  # Will try to find exactly this many reps
         make_plot=True,
         plot_path="squat_fasi.png",
+        debug=True,
+        export_debug_json=True,
     )
 
     print("="*70)
-    print("📊 SQUAT ANALYSIS RESULTS")
+    print("📊 SQUAT ANALYSIS RESULTS (console summary)")
     print("="*70)
+    print(f"\n⚠️  Full debug output saved to: {metrics.get('log_path', 'debug log file')}")
     
     axis_names = ["ang1", "ang2", "ang3"]
     print(f"\n🎯 Principal axis: {axis_names[metrics['principal_axis']]} (axis {metrics['principal_axis']})")
@@ -1318,52 +1767,26 @@ if __name__ == "__main__":
         else:
             print(f"⚠️  Found {n_found} reps, expected {EXPECTED_REPS} (difference: {abs(n_found - EXPECTED_REPS)})")
     
-    if "parameters" in metrics:
-        print(f"\n⚙️  Optimized Parameters:")
-        print(f"   • Velocity threshold: {metrics['parameters']['vel_thresh']:.2f} deg/s")
-        print(f"   • Min phase duration: {metrics['parameters']['min_phase_duration']:.2f} s")
-        print(f"   • Smoothing window: {metrics['parameters']['smooth_window']} samples")
-    
-    if "optimization" in metrics and metrics["optimization"]["all_results"]:
-        print(f"\n🔬 Optimization diagnostics:")
-        print(f"   • Tested {metrics['optimization']['tested_combinations']} parameter combinations")
-        print(f"   • Best score: {metrics['optimization']['best_score']:.2f}")
-        
-        if EXPECTED_REPS is not None:
-            exact_matches = [r for r in metrics['optimization']['all_results'] if r['n_reps'] == EXPECTED_REPS]
-            if exact_matches:
-                print(f"   • Found {len(exact_matches)} parameter sets that detect {EXPECTED_REPS} reps")
-        
-        print(f"\n   Top 5 parameter sets:")
-        for i, res in enumerate(metrics['optimization']['all_results'][:5], 1):
-            marker = "✅" if res['n_reps'] == EXPECTED_REPS and EXPECTED_REPS is not None else "  "
-            print(f"   {marker}{i}. vel={res['vel_thresh']:.1f}, dur={res['min_duration']:.2f} → "
-                  f"{res['n_reps']} reps (score={res['score']:.2f})")
+    # Quality flags summary
+    if "quality_flags" in metrics:
+        qf = metrics["quality_flags"]
+        print(f"\n🏷️  Quality Flags:")
+        print(f"   • Rough detector (simple): {qf['rough_detector_n_reps']} reps")
+        print(f"   • Phase-based detector: {metrics.get('N_rep', 0)} reps")
+        print(f"   • Δ stand-bottom: {qf['delta_stand_bottom_deg']:.1f}° {'✅' if qf['delta_stand_bottom_deg'] >= 20 else '⚠️  (< 20°)'}")
+        print(f"   • Filter modified: {qf['filter_modified_frac']*100:.1f}% {'✅' if qf['filter_modified_frac'] < 0.3 else '⚠️  (> 30%)'}")
+        print(f"   • Vel consistency: ECC {qf['velocity_phase_consistency_ecc']*100:.0f}%, CONC {qf['velocity_phase_consistency_conc']*100:.0f}%")
     
     if metrics.get("N_rep", 0) > 0:
-        print(f"\n⏱️  Timing Metrics:")
-        print(f"   • Total work time: {metrics['totals']['T_work_tot']:.2f} s")
-        print(f"   • Total pause time: {metrics['totals']['T_pause_tot']:.2f} s")
-        print(f"   • Total Time Under Tension (TUT): {metrics['totals']['T_TUT_tot']:.2f} s")
-        print(f"   • Work/Pause ratio: {metrics['ratios']['WP_ratio']:.2f}")
-        print(f"   • Set density: {metrics['ratios']['set_density']:.1%}")
-        
-        print(f"\n📊 Per-Rep Averages:")
-        print(f"   • Eccentric phase: {metrics['means']['mean_T_ecc']:.2f} ± {np.sqrt(metrics['variances']['var_T_ecc']):.2f} s")
-        print(f"   • Bottom phase: {metrics['means']['mean_T_buca']:.2f} ± {np.sqrt(metrics['variances']['var_T_buca']):.2f} s")
-        print(f"   • Concentric phase: {metrics['means']['mean_T_con']:.2f} ± {np.sqrt(metrics['variances']['var_T_con']):.2f} s")
-        print(f"   • Total TUT per rep: {metrics['means']['mean_T_TUT']:.2f} ± {np.sqrt(metrics['variances']['var_T_TUT']):.2f} s")
-        
-        print(f"\n📈 Consistency (Coefficient of Variation):")
-        print(f"   • Eccentric CV: {metrics['cv']['cv_ecc']:.1%}")
-        print(f"   • Concentric CV: {metrics['cv']['cv_con']:.1%}")
-        print(f"   • TUT CV: {metrics['cv']['cv_TUT']:.1%}")
-        
-        print(f"\n✅ Plot saved to: squat_fasi.png")
-    else:
-        print(f"\n⚠️  No repetitions detected even after optimization.")
-        print(f"   • Baseline stand: {metrics['baseline']['mu_stand']:.2f}°")
-        print(f"   • Baseline bottom: {metrics['baseline']['mu_bottom']:.2f}°")
-        print(f"   • Distance: {abs(metrics['baseline']['mu_bottom'] - metrics['baseline']['mu_stand']):.2f}°")
+        print(f"\n⏱️  Timing Summary (per-rep averages):")
+        print(f"   • Eccentric: {metrics['means']['mean_T_ecc']:.2f} s")
+        print(f"   • Bottom: {metrics['means']['mean_T_buca']:.2f} s")
+        print(f"   • Concentric: {metrics['means']['mean_T_con']:.2f} s")
+        print(f"   • TUT per rep: {metrics['means']['mean_T_TUT']:.2f} s")
+        print(f"   • CV TUT: {metrics['cv']['cv_TUT']:.1%}")
     
+    print(f"\n✅ Plot saved to: squat_fasi.png")
+    print(f"📄 Check the full debug log for detailed diagnostics!")
+    print(f"\n✅ Plot saved to: squat_fasi.png")
+    print(f"📄 Check the full debug log for detailed diagnostics!")
     print("\n" + "="*70)

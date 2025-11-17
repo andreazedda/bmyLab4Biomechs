@@ -1,0 +1,35 @@
+{
+  "file": "FILE_EULER2025-10-28-10-23-31.txt",
+  "principal_axis": 2,
+  "parameters": {
+    "vel_thresh": 15.0,
+    "min_phase_duration": 0.2,
+    "smooth_window": 101
+  },
+  "baseline": {
+    "mu_stand": -119.4320325091685,
+    "sigma_stand": 10.295670581733727,
+    "mu_bottom": -119.83873586717641
+  },
+  "N_rep": 0,
+  "rep_segments": [],
+  "axis_diagnostics": {
+    "corr_principal_vs_ang1": -0.0016625340670827536,
+    "corr_principal_vs_ang2": 0.05974272272618773
+  },
+  "quality_flags": {
+    "delta_stand_bottom_deg": 0.4067033580079169,
+    "ecc_vs_conc_symmetry": NaN,
+    "phase_balance": 0.0023559901048415596,
+    "filter_modified_frac": 0.7027515491295367,
+    "velocity_phase_consistency_ecc": 1.0,
+    "velocity_phase_consistency_conc": 1.0,
+    "rough_detector_n_reps": 138
+  },
+  "optimization_summary": {
+    "tested_combinations": 0,
+    "best_score": -1,
+    "expected_reps": 5,
+    "n_reps_found": []
+  }
+}

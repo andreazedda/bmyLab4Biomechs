@@ -1,0 +1,103 @@
+{
+  "file": "FILE_EULER2025-10-28-10-19-35.txt",
+  "principal_axis": 2,
+  "parameters": {
+    "vel_thresh": 13.36968734533798,
+    "min_phase_duration": 0.08,
+    "smooth_window": 51
+  },
+  "baseline": {
+    "mu_stand": -120.54652847247984,
+    "sigma_stand": 7.396906397377611,
+    "mu_bottom": -109.55946735569553
+  },
+  "N_rep": 6,
+  "rep_segments": [
+    {
+      "t_ecc_start": 1.067,
+      "t_ecc_end": 1.205,
+      "t_bottom_start": 1.206,
+      "t_bottom_end": 1.305,
+      "t_conc_start": 1.306,
+      "t_conc_end": 1.402,
+      "t_top_start": 1.403,
+      "t_top_end": 1.402
+    },
+    {
+      "t_ecc_start": 1.595,
+      "t_ecc_end": 1.761,
+      "t_bottom_start": 1.762,
+      "t_bottom_end": 1.808,
+      "t_conc_start": 1.809,
+      "t_conc_end": 1.903,
+      "t_top_start": 1.905,
+      "t_top_end": 1.903
+    },
+    {
+      "t_ecc_start": 11.976,
+      "t_ecc_end": 12.167,
+      "t_bottom_start": 12.168,
+      "t_bottom_end": 12.255,
+      "t_conc_start": 12.256,
+      "t_conc_end": 12.46,
+      "t_top_start": 12.462,
+      "t_top_end": 12.46
+    },
+    {
+      "t_ecc_start": 20.917,
+      "t_ecc_end": 21.03,
+      "t_bottom_start": 21.032,
+      "t_bottom_end": 21.159,
+      "t_conc_start": 21.16,
+      "t_conc_end": 21.468,
+      "t_top_start": 21.47,
+      "t_top_end": 21.468
+    },
+    {
+      "t_ecc_start": 25.549,
+      "t_ecc_end": 25.841,
+      "t_bottom_start": 25.842,
+      "t_bottom_end": 25.913,
+      "t_conc_start": 25.915,
+      "t_conc_end": 26.057,
+      "t_top_start": 26.058,
+      "t_top_end": 26.057
+    },
+    {
+      "t_ecc_start": 34.823,
+      "t_ecc_end": 34.962,
+      "t_bottom_start": 34.963,
+      "t_bottom_end": 35.053,
+      "t_conc_start": 35.055,
+      "t_conc_end": 35.181,
+      "t_top_start": 35.182,
+      "t_top_end": 35.181
+    }
+  ],
+  "axis_diagnostics": {
+    "corr_principal_vs_ang1": 0.24657846997771035,
+    "corr_principal_vs_ang2": 0.026689977553418346
+  },
+  "quality_flags": {
+    "delta_stand_bottom_deg": 10.987061116784304,
+    "ecc_vs_conc_symmetry": 1.0711340206185624,
+    "phase_balance": 0.046096306685366996,
+    "filter_modified_frac": 0.23855765549406566,
+    "velocity_phase_consistency_ecc": 1.0,
+    "velocity_phase_consistency_conc": 1.0,
+    "rough_detector_n_reps": 138
+  },
+  "optimization_summary": {
+    "tested_combinations": 49,
+    "best_score": 66.34104212407577,
+    "expected_reps": 5,
+    "n_reps_found": [
+      1,
+      3,
+      2,
+      5,
+      4,
+      6
+    ]
+  }
+}
