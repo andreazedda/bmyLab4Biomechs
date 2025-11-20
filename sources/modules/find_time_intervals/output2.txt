@@ -1,0 +1,1699 @@
+2025-11-17 20:02:36.150 Python[20822:9510909] ApplePersistenceIgnoreState: Existing state will not be touched. New state will be written to /var/folders/jf/x2y6wx3j4qq61fpf0trn86ch0000gn/T/com.apple.python3.savedState
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:977: UserWarning: Glyph 128202 (\N{BAR CHART}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:979: UserWarning: Glyph 128202 (\N{BAR CHART}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), "resampled_signals_original.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:993: UserWarning: Glyph 10024 (\N{SPARKLES}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:994: UserWarning: Glyph 10024 (\N{SPARKLES}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), "resampled_signals_filtered.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1007: UserWarning: Glyph 128269 (\N{LEFT-POINTING MAGNIFYING GLASS}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1008: UserWarning: Glyph 128269 (\N{LEFT-POINTING MAGNIFYING GLASS}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), "signal_comparison.png"), dpi=150, bbox_inches='tight')
+================================================================================
+BIOMECHANICS SIGNAL ANALYSIS - EULER ANGLES
+================================================================================
+
+📂 File found: FILE_EULER2025-10-28-10-23-31.txt
+   Path: /Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/FILE_EULER2025-10-28-10-23-31.txt
+
+--------------------------------------------------------------------------------
+DATA LOADING
+--------------------------------------------------------------------------------
+✓ Loaded 27112 unique timestamps
+
+--------------------------------------------------------------------------------
+⏱️  SAMPLING QUALITY DIAGNOSTICS
+--------------------------------------------------------------------------------
+  📊 Δt statistics:
+     • Mean:       1.440 ms
+     • Std Dev:    0.728 ms
+     • Min:        1.000 ms
+     • Max:       15.000 ms
+
+  ⚠️  Sampling gaps (dt > 3.0 ms): 391
+     • Gap locations (first 5): [0, 3, 9, 30, 53]
+     • Max gap duration: 15.0 ms
+
+--------------------------------------------------------------------------------
+🔄 SIGNAL RESAMPLING
+--------------------------------------------------------------------------------
+✅ Resampling to uniform time intervals: 27112 samples
+  ⏰ Time range: 0.00 → 39.04 seconds
+  ⌛ Duration: 39.04 seconds
+
+  ANG1: min=-110.58°, max= -72.27°, std= 2.02°
+  ANG2: min= -33.44°, max=  17.31°, std= 4.63°
+  ANG3: min=-171.31°, max= -93.58°, std=10.25°
+
+--------------------------------------------------------------------------------
+🔧 NOISE FILTERING (Moving Average)
+--------------------------------------------------------------------------------
+  📏 Signal duration: 39.04 s
+  📏 Filter window duration: 0.390 s (1/10 of signal)
+  📐 Filter window size: 271 samples (~390.3 ms)
+  🎯 Purpose: Remove high-frequency noise while preserving biomechanical frequencies
+
+  ANG1:
+     • Original noise (diff std): 0.2935°
+     • Filtered noise (diff std): 0.0342°
+     • Noise reduction:  88.4%
+  ANG2:
+     • Original noise (diff std): 0.5151°
+     • Filtered noise (diff std): 0.0202°
+     • Noise reduction:  96.1%
+  ANG3:
+     • Original noise (diff std): 0.6002°
+     • Filtered noise (diff std): 0.0504°
+     • Noise reduction:  91.6%
+
+✅ Filtered signals added to dataset
+
+--------------------------------------------------------------------------------
+🧬 PRINCIPAL COMPONENT ANALYSIS (3D Euler Angles)
+--------------------------------------------------------------------------------
+  📊 Explained variance:
+     • PC1:  80.5% 🎯
+     • PC2:  18.8%
+     • PC3:   0.7%
+
+  🔢 PC1 loadings (ang1, ang2, ang3): [+0.002, +0.034, +0.999]
+  🔢 PC2 loadings (ang1, ang2, ang3): [+0.365, +0.930, -0.032]
+
+✅ Principal component (PC1) added - both original and filtered versions
+
+✓ Resampled data saved: FILE_EULER2025-10-28-10-23-31_resampled.csv
+✓ Original time series plot saved: resampled_signals_original.png
+✓ Filtered time series plot saved: resampled_signals_filtered.png
+✓ Comparison plot saved: signal_comparison.png
+
+📊 Generating comprehensive time-series overview plots with phase regions...
+
+================================================================================
+SIGNAL CHARACTERIZATION & STATISTICAL ANALYSIS
+================================================================================
+  📋 Analyzing both ORIGINAL and FILTERED signals
+  🔬 Original: Raw resampled data with noise
+  ✨ Filtered: Noise-reduced via moving average filter
+================================================================================
+     ⚠️  Phase validation: 12 repetitions lack proper phase sequence or cyclic behavior
+        • Rep #1: Missing phase sequence (has_asc=True, has_desc=False)
+        • Rep #2: Missing phase sequence (has_asc=False, has_desc=False)
+        • Rep #3: Missing phase sequence (has_asc=False, has_desc=False)
+
+────────────────────────────────────────────────────────────────────────────────
+📊 AXIS: ANG1
+────────────────────────────────────────────────────────────────────────────────
+
+  📈 Descriptive Statistics:
+     • Min:         -110.58° (sample  26734)
+     • Max:          -72.27° (sample  21547)
+     • Range:         38.31°
+     • Mean:         -83.27°
+     • Median:       -83.11°
+     • Std Dev:        2.07°
+     • Skewness:      -1.90
+     • Kurtosis:      12.11
+
+  🔬 Signal Quality:
+     • Dynamic range (5-95%):     6.95°
+     • Noise estimate (diff):   0.2935°
+     • SNR-like index:           23.67
+     • Clipping (low/high):      4 /    5 samples
+
+  🔍 Signal Properties:
+     • ✓ Stationary (ADF p-value < 0.05)
+     • Linear trend: -0.0206 deg/s
+     • Peaks detected:    751
+     • Troughs detected:  751
+
+  🌊 Frequency & Periodicity:
+     • Dominant frequency: 0.0256 Hz (period: 39.04s)
+     • Top frequency peaks (Hz):
+        1. 0.1537 Hz (period=6.51s, power=6.45e+00)
+        2. 0.2817 Hz (period=3.55s, power=4.38e+00)
+     • Estimated period:   39.04 s
+     • Autocorr periodicity: 1 samples (lag of 1st peak)
+
+  🔄 Cycle Analysis:
+     • Total cycles:        51
+     • Cycle peaks:         25
+     • Cycle troughs:       26
+
+  🧬 Cycle-Level Metrics:
+     • Mean cycle duration:   0.765 s (CV=67.72%)
+     • Mean cycle amplitude:  7.20° (CV=74.76%)
+     • Trend duration/cycle:  -0.0044 s/cycle
+     • Trend amplitude/cycle: +0.1834 °/cycle
+
+  📍 Phase Statistics:
+     • ascending  : n=  5, mean=0.180s, CV=77.34%, total=0.9s
+     • descending : n=  6, mean=0.100s, CV=67.23%, total=0.6s
+     • stable_high: n= 25, mean=0.892s, CV=42.93%, total=22.3s
+     • stable_low : n= 14, mean=1.033s, CV=50.87%, total=14.5s
+
+  📉 Sliding-Window Stats (2.0s window, 0.5s step):
+     • Std of window means: 0.87°
+     • Std of window stds:  0.84°
+     • Mean window std:     1.24°
+
+  🏋️ EXERCISE REPETITION ANALYSIS:
+     ╔═══════════════════════════════════════════════════════════════════════════╗
+     ║                     REPETITION COUNT & IDENTIFICATION                     ║
+     ╠═══════════════════════════════════════════════════════════════════════════╣
+     ║ Total Repetitions Detected:  12                                        ║
+     ║ Detection Threshold (prominence):   1.39°                                 ║
+     ║ ⚠️  Suspicious Reps (ROM<50% median):  12 (100.0%)                            ║
+     ╚═══════════════════════════════════════════════════════════════════════════╝
+
+     📊 PER-REPETITION METRICS:
+     ┌───────────────────────────────────────────────────────────────────────────┐
+     │ Rep  │ Time (s)   │ Duration (s) │ Range (°)   │ Depth (°)   │
+     ├───────────────────────────────────────────────────────────────────────────┤
+     │⚠️1   │       0.25 │         1.73 │       16.83 │      -98.92 │
+     │⚠️2   │       3.22 │         3.86 │        2.41 │      -85.07 │
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1581: UserWarning: Glyph 128279 (\N{LINK SYMBOL}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1582: UserWarning: Glyph 128279 (\N{LINK SYMBOL}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"autocorr_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1617: UserWarning: Glyph 128202 (\N{BAR CHART}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1617: UserWarning: Glyph 128269 (\N{LEFT-POINTING MAGNIFYING GLASS}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1618: UserWarning: Glyph 128202 (\N{BAR CHART}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"spectrum_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1618: UserWarning: Glyph 128269 (\N{LEFT-POINTING MAGNIFYING GLASS}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"spectrum_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1632: UserWarning: Glyph 127752 (\N{RAINBOW}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1633: UserWarning: Glyph 127752 (\N{RAINBOW}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"spectrogram_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128205 (\N{ROUND PUSHPIN}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128316 (\N{UP-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128317 (\N{DOWN-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128999 (\N{LARGE ORANGE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128998 (\N{LARGE BLUE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128205 (\N{ROUND PUSHPIN}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128316 (\N{UP-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128317 (\N{DOWN-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128999 (\N{LARGE ORANGE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128998 (\N{LARGE BLUE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1793: UserWarning: Glyph 127947 (\N{WEIGHT LIFTER}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1794: UserWarning: Glyph 127947 (\N{WEIGHT LIFTER}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"repetitions_{angle_col}.png"), dpi=150, bbox_inches='tight')
+     │⚠️3   │       7.97 │         4.03 │        4.47 │      -85.08 │
+     │⚠️4   │      11.29 │         3.03 │        2.86 │      -83.80 │
+     │⚠️5   │      14.04 │         3.19 │        4.27 │      -83.81 │
+     │⚠️6   │      17.68 │         2.87 │        7.86 │      -86.88 │
+     │⚠️7   │      19.79 │         2.92 │       12.40 │      -88.61 │
+     │⚠️8   │      23.52 │         3.80 │       14.10 │      -90.17 │
+     │⚠️9   │      27.38 │         3.86 │       13.41 │      -90.64 │
+     │⚠️10  │      31.25 │         3.89 │       19.21 │      -91.48 │
+     │⚠️11  │      35.17 │         3.63 │        4.36 │      -84.81 │
+     │⚠️12  │      38.50 │         2.20 │       30.41 │     -110.58 │
+     └───────────────────────────────────────────────────────────────────────────┘
+
+     ⏱️  INTER-REPETITION INTERVALS:
+        • Mean interval:      3.48 s
+        • Std deviation:      0.67 s
+        • Min interval:       2.11 s
+        • Max interval:       4.75 s
+        • Coefficient of variation:  19.2%
+
+     📏 RANGE OF MOTION ANALYSIS:
+        • Mean range:        11.05°
+        • Std deviation:      8.05°
+        • Min range:          2.41°
+        • Max range:         30.41°
+        • Consistency (CV):  72.9%
+
+     ⏲️  REPETITION DURATION ANALYSIS:
+        • Mean duration:      3.25 s
+        • Std deviation:      0.70 s
+        • Tempo CV:          21.6%
+
+     ⭐ PERFORMANCE QUALITY METRICS:
+        • Overall Consistency Score:  62.1/100
+        • Range Consistency (lower=better):   72.9%
+        • Timing Consistency (lower=better):  19.2%
+        • Tempo Consistency (lower=better):   21.6%
+        • Fatigue Indicator: INCREASING (+1.248°/rep)
+
+     🎯 DERIVED METRICS:
+        • Average repetition frequency: 0.2876 Hz (3.48 s/rep)
+        • Total exercise duration: 38.25 s
+        • Work density: 18.8 reps/minute
+
+
+  🚀 ADVANCED REPETITION ANALYSIS (Production-Ready):
+     ╔═══════════════════════════════════════════════════════════════════════════╗
+     ║           BUTTERWORTH FILTER + ROM THRESHOLD & OUTLIER REMOVAL            ║
+     ╚═══════════════════════════════════════════════════════════════════════════╝
+     ℹ️  Note: Applies ADDITIONAL Butterworth filter on original signal
+     ℹ️  Moving-average filtered signals analyzed separately (see '_filtered' sections)
+     ✓ Applied Butterworth low-pass filter (cutoff=10.0Hz, order=4)
+  🔄 Removed 10 repetitions lacking proper phase sequence or cyclic behavior
+     • Rep #3: phases=['stable_low', 'stable_high', 'stable_low']
+     • Rep #4: phases=['stable_low', 'stable_high', 'descending', 'stable_high']
+
+     📋 FILTERING STATISTICS:
+        • Total reps detected (before filtering): 13
+        • ROM threshold applied: 2.8°
+        • Reps below ROM threshold: 1
+        • Suspicious reps removed (ROM<50%): 0
+        • Phase validation failed: 10 (no proper asc/desc sequence or not cyclic)
+        • First/last reps removed: True
+        • Statistical outliers removed: 0
+        • Valid reps after filtering: 0
+
+     ⚠️  No valid repetitions after filtering
+     Suggestion: Lower ROM threshold or check signal quality
+     ✅ Autocorrelation plot saved: autocorr_ang1.png
+     ✅ Frequency spectrum plot saved: spectrum_ang1.png
+     ✅ Spectrogram saved: spectrogram_ang1.png
+     ✅ Phase detection plot saved: phases_ang1.png
+     ✅ Repetition detection plot saved: repetitions_ang1.png
+     ⚠️  Phase validation: 6 repetitions lack proper phase sequence or cyclic behavior
+        • Rep #3: Missing phase sequence (has_asc=False, has_desc=True)
+        • Rep #6: Missing phase sequence (has_asc=True, has_desc=False)
+        • Rep #7: Missing phase sequence (has_asc=False, has_desc=False)
+
+────────────────────────────────────────────────────────────────────────────────
+📊 AXIS: ANG2
+────────────────────────────────────────────────────────────────────────────────
+
+  📈 Descriptive Statistics:
+     • Min:          -33.44° (sample    171)
+     • Max:           17.31° (sample  21547)
+     • Range:         50.75°
+     • Mean:          -2.13°
+     • Median:        -1.84°
+     • Std Dev:        4.71°
+     • Skewness:      -0.98
+     • Kurtosis:       4.08
+
+  🔬 Signal Quality:
+     • Dynamic range (5-95%):    15.96°
+     • Noise estimate (diff):   0.5151°
+     • SNR-like index:           30.99
+     • Clipping (low/high):      6 /    5 samples
+
+  🔍 Signal Properties:
+     • ✓ Stationary (ADF p-value < 0.05)
+     • Linear trend: -0.0149 deg/s
+     • Peaks detected:    497
+     • Troughs detected:  497
+
+  🌊 Frequency & Periodicity:
+     • Dominant frequency: 0.0256 Hz (period: 39.04s)
+     • Top frequency peaks (Hz):
+        1. 0.6147 Hz (period=1.63s, power=3.57e+01)
+        2. 0.5379 Hz (period=1.86s, power=2.14e+01)
+        3. 0.7428 Hz (period=1.35s, power=1.41e+01)
+     • Estimated period:   39.04 s
+     • Autocorr periodicity: 1 samples (lag of 1st peak)
+
+  🔄 Cycle Analysis:
+     • Total cycles:        59
+     • Cycle peaks:         30
+     • Cycle troughs:       29
+
+  🧬 Cycle-Level Metrics:
+     • Mean cycle duration:   0.665 s (CV=63.98%)
+     • Mean cycle amplitude:  15.09° (CV=47.74%)
+     • Trend duration/cycle:  -0.0000 s/cycle
+     • Trend amplitude/cycle: +0.0432 °/cycle
+
+  📍 Phase Statistics:
+     • ascending  : n= 12, mean=0.384s, CV=85.75%, total=4.6s
+     • descending : n= 15, mean=0.380s, CV=74.20%, total=5.7s
+     • stable_high: n= 19, mean=0.911s, CV=41.97%, total=17.3s
+     • stable_low : n= 12, mean=0.913s, CV=34.29%, total=11.0s
+
+  📉 Sliding-Window Stats (2.0s window, 0.5s step):
+     • Std of window means: 2.06°
+     • Std of window stds:  1.30°
+     • Mean window std:     3.34°
+
+  🏋️ EXERCISE REPETITION ANALYSIS:
+     ╔═══════════════════════════════════════════════════════════════════════════╗
+     ║                     REPETITION COUNT & IDENTIFICATION                     ║
+     ╠═══════════════════════════════════════════════════════════════════════════╣
+     ║ Total Repetitions Detected:  13                                        ║
+     ║ Detection Threshold (prominence):   3.19°                                 ║
+     ║ ⚠️  Suspicious Reps (ROM<50% median):   6 (46.2%)                            ║
+     ╚═══════════════════════════════════════════════════════════════════════════╝
+
+     📊 PER-REPETITION METRICS:
+     ┌───────────────────────────────────────────────────────────────────────────┐
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1581: UserWarning: Glyph 128279 (\N{LINK SYMBOL}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1582: UserWarning: Glyph 128279 (\N{LINK SYMBOL}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"autocorr_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1617: UserWarning: Glyph 128202 (\N{BAR CHART}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1617: UserWarning: Glyph 128269 (\N{LEFT-POINTING MAGNIFYING GLASS}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1618: UserWarning: Glyph 128202 (\N{BAR CHART}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"spectrum_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1618: UserWarning: Glyph 128269 (\N{LEFT-POINTING MAGNIFYING GLASS}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"spectrum_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1632: UserWarning: Glyph 127752 (\N{RAINBOW}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1633: UserWarning: Glyph 127752 (\N{RAINBOW}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"spectrogram_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128205 (\N{ROUND PUSHPIN}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128316 (\N{UP-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128317 (\N{DOWN-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128999 (\N{LARGE ORANGE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128998 (\N{LARGE BLUE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128205 (\N{ROUND PUSHPIN}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128316 (\N{UP-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128317 (\N{DOWN-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128999 (\N{LARGE ORANGE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128998 (\N{LARGE BLUE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1793: UserWarning: Glyph 127947 (\N{WEIGHT LIFTER}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1794: UserWarning: Glyph 127947 (\N{WEIGHT LIFTER}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"repetitions_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1889: UserWarning: Glyph 127947 (\N{WEIGHT LIFTER}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1889: UserWarning: Glyph 9989 (\N{WHITE HEAVY CHECK MARK}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1890: UserWarning: Glyph 127947 (\N{WEIGHT LIFTER}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"repetitions_comparison_{angle_col}.png"),
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1890: UserWarning: Glyph 9989 (\N{WHITE HEAVY CHECK MARK}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"repetitions_comparison_{angle_col}.png"),
+     │ Rep  │ Time (s)   │ Duration (s) │ Range (°)   │ Depth (°)   │
+     ├───────────────────────────────────────────────────────────────────────────┤
+     │ 1   │       0.25 │         1.68 │       43.59 │      -33.44 │
+     │ 2   │       3.12 │         2.57 │       11.85 │      -12.34 │
+     │⚠️3   │       5.39 │         2.40 │        7.85 │       -4.81 │
+     │ 4   │       7.92 │         2.95 │       24.19 │      -12.47 │
+     │ 5   │      11.29 │         3.06 │       20.86 │      -10.97 │
+     │⚠️6   │      14.04 │         3.19 │        9.95 │       -4.50 │
+     │⚠️7   │      17.68 │         2.87 │       17.75 │      -11.55 │
+     │ 8   │      19.79 │         2.92 │       19.20 │      -10.73 │
+     │ 9   │      23.52 │         3.80 │       22.72 │      -13.72 │
+     │⚠️10  │      27.38 │         3.86 │       20.73 │      -12.58 │
+     │⚠️11  │      31.25 │         3.89 │       31.88 │      -14.57 │
+     │ 12  │      35.17 │         3.62 │       20.91 │      -10.82 │
+     │⚠️13  │      38.49 │         2.21 │       24.77 │      -19.33 │
+     └───────────────────────────────────────────────────────────────────────────┘
+
+     ⏱️  INTER-REPETITION INTERVALS:
+        • Mean interval:      3.19 s
+        • Std deviation:      0.63 s
+        • Min interval:       2.11 s
+        • Max interval:       3.93 s
+        • Coefficient of variation:  19.7%
+
+     📏 RANGE OF MOTION ANALYSIS:
+        • Mean range:        21.25°
+        • Std deviation:      8.98°
+        • Min range:          7.85°
+        • Max range:         43.59°
+        • Consistency (CV):  42.2%
+
+     ⏲️  REPETITION DURATION ANALYSIS:
+        • Mean duration:      3.00 s
+        • Std deviation:      0.65 s
+        • Tempo CV:          21.7%
+
+     ⭐ PERFORMANCE QUALITY METRICS:
+        • Overall Consistency Score:  72.1/100
+        • Range Consistency (lower=better):   42.2%
+        • Timing Consistency (lower=better):  19.7%
+        • Tempo Consistency (lower=better):   21.7%
+        • Fatigue Indicator: INCREASING (+0.171°/rep)
+
+     🎯 DERIVED METRICS:
+        • Average repetition frequency: 0.3138 Hz (3.19 s/rep)
+        • Total exercise duration: 38.24 s
+        • Work density: 20.4 reps/minute
+
+
+  🚀 ADVANCED REPETITION ANALYSIS (Production-Ready):
+     ╔═══════════════════════════════════════════════════════════════════════════╗
+     ║           BUTTERWORTH FILTER + ROM THRESHOLD & OUTLIER REMOVAL            ║
+     ╚═══════════════════════════════════════════════════════════════════════════╝
+     ℹ️  Note: Applies ADDITIONAL Butterworth filter on original signal
+     ℹ️  Moving-average filtered signals analyzed separately (see '_filtered' sections)
+     ✓ Applied Butterworth low-pass filter (cutoff=10.0Hz, order=4)
+  🔄 Removed 3 repetitions lacking proper phase sequence or cyclic behavior
+     • Rep #7: phases=['stable_high']
+     • Rep #11: phases=['stable_high', 'ascending', 'stable_low', 'ascending', 'stable_high']
+
+     📋 FILTERING STATISTICS:
+        • Total reps detected (before filtering): 13
+        • ROM threshold applied: 7.2°
+        • Reps below ROM threshold: 1
+        • Suspicious reps removed (ROM<50%): 0
+        • Phase validation failed: 3 (no proper asc/desc sequence or not cyclic)
+        • First/last reps removed: True
+        • Statistical outliers removed: 0
+        • IQR bounds: [-0.4°, 27.8°]
+        • Valid reps after filtering: 7
+
+     🎯 ADVANCED QUALITY INDICES (0-100 scale):
+        • ROM Consistency Index:     65.0/100
+        • Tempo Consistency Index:   90.5/100
+        • Depth Index:               65.0/100
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        • IGM Score (weighted):      72.7/100
+        • Qualitative: Good: Consistent performance with minor variations
+
+     💪 ROBUST FATIGUE ANALYSIS:
+        • Trend: INCONSISTENT
+        • Slope: -0.863°/rep
+        • R² (fit quality): 0.115
+        • Statistically significant: NO
+        ⚠️  INCONSISTENT: No clear trend (R² < 0.5)
+
+     📊 RAW COEFFICIENT OF VARIATION:
+        • Range CV:   35.0%
+        • Tempo CV:    9.5%
+        • Timing CV:  43.8%
+
+     ✅ VALID REPETITIONS (after filtering):
+     ┌───────────────────────────────────────────────────────────────────────────┐
+     │ Rep  │ Time (s)   │ Duration (s) │ Range (°)   │ Depth (°)   │
+     ├───────────────────────────────────────────────────────────────────────────┤
+     │ 1    │       3.13 │         2.65 │       11.02 │      -11.92 │
+     │ 2    │       7.93 │         2.87 │       23.77 │      -12.01 │
+     │ 3    │      11.28 │         2.98 │       19.59 │      -10.56 │
+     │ 4    │      13.90 │         3.20 │        9.04 │       -2.97 │
+     │ 5    │      20.70 │         2.61 │       14.84 │       -7.76 │
+     │ 6    │      22.90 │         2.35 │        9.31 │       -3.67 │
+     │ 7    │      25.39 │         2.62 │       14.19 │       -8.33 │
+     └───────────────────────────────────────────────────────────────────────────┘
+     ✅ Autocorrelation plot saved: autocorr_ang2.png
+     ✅ Frequency spectrum plot saved: spectrum_ang2.png
+     ✅ Spectrogram saved: spectrogram_ang2.png
+     ✅ Phase detection plot saved: phases_ang2.png
+     ✅ Repetition detection plot saved: repetitions_ang2.png
+     ✅ Base vs Advanced comparison plot saved: repetitions_comparison_ang2.png
+     ⚠️  Phase validation: 3 repetitions lack proper phase sequence or cyclic behavior
+        • Rep #1: Missing phase sequence (has_asc=True, has_desc=False)
+        • Rep #5: Not cyclic (Δangle=10.1°)
+        • Rep #9: Missing phase sequence (has_asc=True, has_desc=False)
+
+────────────────────────────────────────────────────────────────────────────────
+📊 AXIS: ANG3
+────────────────────────────────────────────────────────────────────────────────
+
+  📈 Descriptive Statistics:
+     • Min:         -171.31° (sample  26734)
+     • Max:          -93.58° (sample  25671)
+     • Range:         77.74°
+     • Mean:        -119.67°
+     • Median:      -116.62°
+     • Std Dev:       10.28°
+     • Skewness:      -0.26
+     • Kurtosis:      -1.21
+
+  🔬 Signal Quality:
+     • Dynamic range (5-95%):    28.83°
+     • Noise estimate (diff):   0.6002°
+     • SNR-like index:           48.03
+     • Clipping (low/high):      4 /    7 samples
+
+  🔍 Signal Properties:
+     • ✓ Stationary (ADF p-value < 0.05)
+     • Linear trend: -0.3658 deg/s
+     • Peaks detected:    619
+     • Troughs detected:  620
+
+  🌊 Frequency & Periodicity:
+     • Dominant frequency: 0.0256 Hz (period: 39.04s)
+     • Top frequency peaks (Hz):
+        1. 0.0768 Hz (period=13.01s, power=4.71e+02)
+        2. 0.2561 Hz (period=3.90s, power=4.71e+02)
+        3. 0.1281 Hz (period=7.81s, power=4.00e+02)
+     • Estimated period:   39.04 s
+     • Autocorr periodicity: 1 samples (lag of 1st peak)
+
+  🔄 Cycle Analysis:
+     • Total cycles:        60
+     • Cycle peaks:         29
+     • Cycle troughs:       31
+
+  🧬 Cycle-Level Metrics:
+     • Mean cycle duration:   0.648 s (CV=65.26%)
+     • Mean cycle amplitude:  16.59° (CV=67.39%)
+     • Trend duration/cycle:  -0.0024 s/cycle
+     • Trend amplitude/cycle: +0.3325 °/cycle
+
+  📍 Phase Statistics:
+     • ascending  : n= 23, mean=0.391s, CV=91.62%, total=9.0s
+     • descending : n= 13, mean=0.708s, CV=57.70%, total=9.2s
+     • stable_high: n= 11, mean=1.000s, CV=28.44%, total=11.0s
+     • stable_low : n= 12, mean=0.755s, CV=46.58%, total=9.1s
+
+  📉 Sliding-Window Stats (2.0s window, 0.5s step):
+     • Std of window means: 8.75°
+     • Std of window stds:  2.32°
+     • Mean window std:     5.04°
+
+  🏋️ EXERCISE REPETITION ANALYSIS:
+     ╔═══════════════════════════════════════════════════════════════════════════╗
+     ║                     REPETITION COUNT & IDENTIFICATION                     ║
+     ╠═══════════════════════════════════════════════════════════════════════════╣
+     ║ Total Repetitions Detected:  12                                        ║
+     ║ Detection Threshold (prominence):   5.77°                                 ║
+     ║ ⚠️  Suspicious Reps (ROM<50% median):   4 (33.3%)                            ║
+     ╚═══════════════════════════════════════════════════════════════════════════╝
+
+     📊 PER-REPETITION METRICS:
+     ┌───────────────────────────────────────────────────────────────────────────┐
+     │ Rep  │ Time (s)   │ Duration (s) │ Range (°)   │ Depth (°)   │
+     ├───────────────────────────────────────────────────────────────────────────┤
+     │⚠️1   │       0.25 │         2.05 │       21.03 │     -126.24 │
+     │ 2   │       3.85 │         3.48 │       13.62 │     -117.30 │
+     │⚠️3   │       7.21 │         3.84 │       13.14 │     -118.68 │
+     │ 4   │      11.53 │         5.18 │       25.70 │     -116.37 │
+     │⚠️5   │      17.58 │         4.07 │       32.53 │     -140.78 │
+     │ 6   │      19.68 │         2.85 │       28.50 │     -139.07 │
+     │ 7   │      23.28 │         2.88 │       22.26 │     -138.01 │
+     │ 8   │      25.44 │         2.09 │       30.83 │     -132.07 │
+     │⚠️9   │      27.47 │         2.03 │       22.72 │     -139.73 │
+     │ 10  │      29.51 │         2.02 │       38.81 │     -141.78 │
+     │ 11  │      31.51 │         4.49 │       48.09 │     -144.04 │
+     │ 12  │      38.50 │         4.03 │       77.74 │     -171.31 │
+     └───────────────────────────────────────────────────────────────────────────┘
+
+     ⏱️  INTER-REPETITION INTERVALS:
+        • Mean interval:      3.48 s
+        • Std deviation:      1.64 s
+        • Min interval:       2.00 s
+        • Max interval:       6.99 s
+        • Coefficient of variation:  47.2%
+
+     📏 RANGE OF MOTION ANALYSIS:
+        • Mean range:        31.25°
+        • Std deviation:     16.93°
+        • Min range:         13.14°
+        • Max range:         77.74°
+        • Consistency (CV):  54.2%
+
+     ⏲️  REPETITION DURATION ANALYSIS:
+        • Mean duration:      3.25 s
+        • Std deviation:      1.04 s
+        • Tempo CV:          32.1%
+
+     ⭐ PERFORMANCE QUALITY METRICS:
+        • Overall Consistency Score:  55.5/100
+        • Range Consistency (lower=better):   54.2%
+        • Timing Consistency (lower=better):  47.2%
+        • Tempo Consistency (lower=better):   32.1%
+        • Fatigue Indicator: INCREASING (+3.803°/rep)
+
+     🎯 DERIVED METRICS:
+        • Average repetition frequency: 0.2876 Hz (3.48 s/rep)
+        • Total exercise duration: 38.25 s
+        • Work density: 18.8 reps/minute
+
+
+  🚀 ADVANCED REPETITION ANALYSIS (Production-Ready):
+     ╔═══════════════════════════════════════════════════════════════════════════╗
+     ║           BUTTERWORTH FILTER + ROM THRESHOLD & OUTLIER REMOVAL            ║
+     ╚═══════════════════════════════════════════════════════════════════════════╝
+     ℹ️  Note: Applies ADDITIONAL Butterworth filter on original signal
+     ℹ️  Moving-average filtered signals analyzed separately (see '_filtered' sections)
+     ✓ Applied Butterworth low-pass filter (cutoff=10.0Hz, order=4)
+  🔄 Removed 2 repetitions lacking proper phase sequence or cyclic behavior
+     • Rep #5: phases=['stable_high', 'descending']
+     • Rep #6: Δangle=13.8°
+
+     📋 FILTERING STATISTICS:
+        • Total reps detected (before filtering): 11
+        • ROM threshold applied: 14.3°
+        • Reps below ROM threshold: 3
+        • Suspicious reps removed (ROM<50%): 0
+        • Phase validation failed: 2 (no proper asc/desc sequence or not cyclic)
+        • First/last reps removed: True
+        • Statistical outliers removed: 0
+        • Valid reps after filtering: 4
+
+     🎯 ADVANCED QUALITY INDICES (0-100 scale):
+        • ROM Consistency Index:     80.7/100
+        • Tempo Consistency Index:   82.6/100
+        • Depth Index:               80.7/100
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        • IGM Score (weighted):      81.3/100
+        • Qualitative: Excellent: High consistency and depth control
+
+     💪 ROBUST FATIGUE ANALYSIS:
+        • Trend: PROGRESSIVE EXPLORATION
+        • Slope: +5.514°/rep
+        • R² (fit quality): 0.886
+        • Statistically significant: NO
+        ℹ️  PROGRESSIVE EXPLORATION: Athlete exploring ROM limits
+
+     📊 RAW COEFFICIENT OF VARIATION:
+        • Range CV:   19.3%
+        • Tempo CV:   17.4%
+        • Timing CV:  40.5%
+
+     ✅ VALID REPETITIONS (after filtering):
+     ┌───────────────────────────────────────────────────────────────────────────┐
+     │ Rep  │ Time (s)   │ Duration (s) │ Range (°)   │ Depth (°)   │
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1581: UserWarning: Glyph 128279 (\N{LINK SYMBOL}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1582: UserWarning: Glyph 128279 (\N{LINK SYMBOL}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"autocorr_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1617: UserWarning: Glyph 128202 (\N{BAR CHART}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1617: UserWarning: Glyph 128269 (\N{LEFT-POINTING MAGNIFYING GLASS}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1618: UserWarning: Glyph 128202 (\N{BAR CHART}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"spectrum_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1618: UserWarning: Glyph 128269 (\N{LEFT-POINTING MAGNIFYING GLASS}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"spectrum_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1632: UserWarning: Glyph 127752 (\N{RAINBOW}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1633: UserWarning: Glyph 127752 (\N{RAINBOW}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"spectrogram_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128205 (\N{ROUND PUSHPIN}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128316 (\N{UP-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128317 (\N{DOWN-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128999 (\N{LARGE ORANGE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128998 (\N{LARGE BLUE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128205 (\N{ROUND PUSHPIN}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128316 (\N{UP-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128317 (\N{DOWN-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128999 (\N{LARGE ORANGE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128998 (\N{LARGE BLUE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1793: UserWarning: Glyph 127947 (\N{WEIGHT LIFTER}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1794: UserWarning: Glyph 127947 (\N{WEIGHT LIFTER}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"repetitions_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1889: UserWarning: Glyph 127947 (\N{WEIGHT LIFTER}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1889: UserWarning: Glyph 9989 (\N{WHITE HEAVY CHECK MARK}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1890: UserWarning: Glyph 127947 (\N{WEIGHT LIFTER}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"repetitions_comparison_{angle_col}.png"),
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1890: UserWarning: Glyph 9989 (\N{WHITE HEAVY CHECK MARK}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"repetitions_comparison_{angle_col}.png"),
+     ├───────────────────────────────────────────────────────────────────────────┤
+     │ 1    │      19.67 │         3.01 │       27.08 │     -137.55 │
+     │ 2    │      23.59 │         4.92 │       30.73 │     -135.70 │
+     │ 3    │      29.51 │         3.96 │       33.29 │     -140.44 │
+     │ 4    │      31.51 │         4.50 │       44.61 │     -140.08 │
+     └───────────────────────────────────────────────────────────────────────────┘
+     ✅ Autocorrelation plot saved: autocorr_ang3.png
+     ✅ Frequency spectrum plot saved: spectrum_ang3.png
+     ✅ Spectrogram saved: spectrogram_ang3.png
+     ✅ Phase detection plot saved: phases_ang3.png
+     ✅ Repetition detection plot saved: repetitions_ang3.png
+     ✅ Base vs Advanced comparison plot saved: repetitions_comparison_ang3.png
+     ⚠️  Phase validation: 3 repetitions lack proper phase sequence or cyclic behavior
+        • Rep #1: Missing phase sequence (has_asc=True, has_desc=False)
+        • Rep #5: Not cyclic (Δangle=10.3°)
+        • Rep #9: Missing phase sequence (has_asc=True, has_desc=False)
+
+────────────────────────────────────────────────────────────────────────────────
+📊 AXIS: ANG_PRINCIPAL
+────────────────────────────────────────────────────────────────────────────────
+
+  📈 Descriptive Statistics:
+     • Min:          -52.07° (sample  26734)
+     • Max:           26.19° (sample  25671)
+     • Range:         78.26°
+     • Mean:           0.02°
+     • Median:         3.06°
+     • Std Dev:       10.28°
+     • Skewness:      -0.26
+     • Kurtosis:      -1.20
+
+  🔬 Signal Quality:
+     • Dynamic range (5-95%):    28.81°
+     • Noise estimate (diff):   0.6034°
+     • SNR-like index:           47.75
+     • Clipping (low/high):      4 /    7 samples
+
+  🔍 Signal Properties:
+     • ✓ Stationary (ADF p-value < 0.05)
+     • Linear trend: -0.3661 deg/s
+     • Peaks detected:    842
+     • Troughs detected:  843
+
+  🌊 Frequency & Periodicity:
+     • Dominant frequency: 0.0256 Hz (period: 39.04s)
+     • Top frequency peaks (Hz):
+        1. 0.2561 Hz (period=3.90s, power=4.73e+02)
+        2. 0.0768 Hz (period=13.01s, power=4.73e+02)
+        3. 0.1281 Hz (period=7.81s, power=4.06e+02)
+     • Estimated period:   39.04 s
+     • Autocorr periodicity: 1 samples (lag of 1st peak)
+
+  🔄 Cycle Analysis:
+     • Total cycles:        60
+     • Cycle peaks:         29
+     • Cycle troughs:       31
+
+  🧬 Cycle-Level Metrics:
+     • Mean cycle duration:   0.648 s (CV=65.04%)
+     • Mean cycle amplitude:  16.68° (CV=67.20%)
+     • Trend duration/cycle:  -0.0024 s/cycle
+     • Trend amplitude/cycle: +0.3329 °/cycle
+
+  📍 Phase Statistics:
+     • ascending  : n= 23, mean=0.391s, CV=90.88%, total=9.0s
+     • descending : n= 14, mean=0.700s, CV=56.35%, total=9.8s
+     • stable_high: n= 11, mean=0.999s, CV=28.30%, total=11.0s
+     • stable_low : n= 11, mean=0.770s, CV=47.23%, total=8.5s
+
+  📉 Sliding-Window Stats (2.0s window, 0.5s step):
+     • Std of window means: 8.74°
+     • Std of window stds:  2.32°
+     • Mean window std:     5.05°
+
+  🏋️ EXERCISE REPETITION ANALYSIS:
+     ╔═══════════════════════════════════════════════════════════════════════════╗
+     ║                     REPETITION COUNT & IDENTIFICATION                     ║
+     ╠═══════════════════════════════════════════════════════════════════════════╣
+     ║ Total Repetitions Detected:  12                                        ║
+     ║ Detection Threshold (prominence):   5.76°                                 ║
+     ║ ⚠️  Suspicious Reps (ROM<50% median):   4 (33.3%)                            ║
+     ╚═══════════════════════════════════════════════════════════════════════════╝
+
+     📊 PER-REPETITION METRICS:
+     ┌───────────────────────────────────────────────────────────────────────────┐
+     │ Rep  │ Time (s)   │ Duration (s) │ Range (°)   │ Depth (°)   │
+     ├───────────────────────────────────────────────────────────────────────────┤
+     │⚠️1   │       0.25 │         2.05 │       22.00 │       -7.64 │
+     │ 2   │       3.85 │         3.48 │       13.72 │        2.21 │
+     │⚠️3   │       7.21 │         3.84 │       13.38 │        0.95 │
+     │ 4   │      11.53 │         5.18 │       25.86 │        3.50 │
+     │⚠️5   │      17.57 │         4.07 │       32.50 │      -20.98 │
+     │ 6   │      19.68 │         2.85 │       28.53 │      -19.36 │
+     │ 7   │      23.28 │         2.88 │       22.19 │      -18.18 │
+     │ 8   │      25.44 │         2.09 │       31.13 │      -12.35 │
+     │⚠️9   │      27.47 │         2.03 │       22.83 │      -20.16 │
+     │ 10  │      29.52 │         2.02 │       38.58 │      -21.95 │
+     │ 11  │      31.51 │         4.49 │       48.50 │      -24.42 │
+     │ 12  │      38.50 │         4.03 │       78.26 │      -52.07 │
+     └───────────────────────────────────────────────────────────────────────────┘
+
+     ⏱️  INTER-REPETITION INTERVALS:
+        • Mean interval:      3.48 s
+        • Std deviation:      1.64 s
+        • Min interval:       2.00 s
+        • Max interval:       6.99 s
+        • Coefficient of variation:  47.2%
+
+     📏 RANGE OF MOTION ANALYSIS:
+        • Mean range:        31.46°
+        • Std deviation:     16.99°
+        • Min range:         13.38°
+        • Max range:         78.26°
+        • Consistency (CV):  54.0%
+
+     ⏲️  REPETITION DURATION ANALYSIS:
+        • Mean duration:      3.25 s
+        • Std deviation:      1.04 s
+        • Tempo CV:          32.0%
+
+     ⭐ PERFORMANCE QUALITY METRICS:
+        • Overall Consistency Score:  55.6/100
+        • Range Consistency (lower=better):   54.0%
+        • Timing Consistency (lower=better):  47.2%
+        • Tempo Consistency (lower=better):   32.0%
+        • Fatigue Indicator: INCREASING (+3.786°/rep)
+
+     🎯 DERIVED METRICS:
+        • Average repetition frequency: 0.2876 Hz (3.48 s/rep)
+        • Total exercise duration: 38.25 s
+        • Work density: 18.8 reps/minute
+
+
+  🚀 ADVANCED REPETITION ANALYSIS (Production-Ready):
+     ╔═══════════════════════════════════════════════════════════════════════════╗
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1581: UserWarning: Glyph 128279 (\N{LINK SYMBOL}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1582: UserWarning: Glyph 128279 (\N{LINK SYMBOL}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"autocorr_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1617: UserWarning: Glyph 128202 (\N{BAR CHART}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1617: UserWarning: Glyph 128269 (\N{LEFT-POINTING MAGNIFYING GLASS}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1618: UserWarning: Glyph 128202 (\N{BAR CHART}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"spectrum_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1618: UserWarning: Glyph 128269 (\N{LEFT-POINTING MAGNIFYING GLASS}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"spectrum_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1632: UserWarning: Glyph 127752 (\N{RAINBOW}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1633: UserWarning: Glyph 127752 (\N{RAINBOW}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"spectrogram_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128205 (\N{ROUND PUSHPIN}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128316 (\N{UP-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128317 (\N{DOWN-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128999 (\N{LARGE ORANGE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128998 (\N{LARGE BLUE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128205 (\N{ROUND PUSHPIN}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128316 (\N{UP-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128317 (\N{DOWN-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128999 (\N{LARGE ORANGE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128998 (\N{LARGE BLUE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1793: UserWarning: Glyph 127947 (\N{WEIGHT LIFTER}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1794: UserWarning: Glyph 127947 (\N{WEIGHT LIFTER}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"repetitions_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1889: UserWarning: Glyph 127947 (\N{WEIGHT LIFTER}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1889: UserWarning: Glyph 9989 (\N{WHITE HEAVY CHECK MARK}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1890: UserWarning: Glyph 127947 (\N{WEIGHT LIFTER}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"repetitions_comparison_{angle_col}.png"),
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1890: UserWarning: Glyph 9989 (\N{WHITE HEAVY CHECK MARK}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"repetitions_comparison_{angle_col}.png"),
+     ║           BUTTERWORTH FILTER + ROM THRESHOLD & OUTLIER REMOVAL            ║
+     ╚═══════════════════════════════════════════════════════════════════════════╝
+     ℹ️  Note: Applies ADDITIONAL Butterworth filter on original signal
+     ℹ️  Moving-average filtered signals analyzed separately (see '_filtered' sections)
+     ✓ Applied Butterworth low-pass filter (cutoff=10.0Hz, order=4)
+  🔄 Removed 2 repetitions lacking proper phase sequence or cyclic behavior
+     • Rep #5: phases=['stable_high', 'descending']
+     • Rep #6: Δangle=13.9°
+
+     📋 FILTERING STATISTICS:
+        • Total reps detected (before filtering): 11
+        • ROM threshold applied: 14.3°
+        • Reps below ROM threshold: 3
+        • Suspicious reps removed (ROM<50%): 0
+        • Phase validation failed: 2 (no proper asc/desc sequence or not cyclic)
+        • First/last reps removed: True
+        • Statistical outliers removed: 0
+        • Valid reps after filtering: 4
+
+     🎯 ADVANCED QUALITY INDICES (0-100 scale):
+        • ROM Consistency Index:     80.3/100
+        • Tempo Consistency Index:   82.6/100
+        • Depth Index:               80.3/100
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        • IGM Score (weighted):      81.0/100
+        • Qualitative: Excellent: High consistency and depth control
+
+     💪 ROBUST FATIGUE ANALYSIS:
+        • Trend: PROGRESSIVE EXPLORATION
+        • Slope: +5.602°/rep
+        • R² (fit quality): 0.874
+        • Statistically significant: NO
+        ℹ️  PROGRESSIVE EXPLORATION: Athlete exploring ROM limits
+
+     📊 RAW COEFFICIENT OF VARIATION:
+        • Range CV:   19.7%
+        • Tempo CV:   17.4%
+        • Timing CV:  40.4%
+
+     ✅ VALID REPETITIONS (after filtering):
+     ┌───────────────────────────────────────────────────────────────────────────┐
+     │ Rep  │ Time (s)   │ Duration (s) │ Range (°)   │ Depth (°)   │
+     ├───────────────────────────────────────────────────────────────────────────┤
+     │ 1    │      19.67 │         3.01 │       27.09 │      -17.86 │
+     │ 2    │      23.59 │         4.92 │       30.73 │      -15.86 │
+     │ 3    │      29.51 │         3.96 │       33.11 │      -20.64 │
+     │ 4    │      31.52 │         4.50 │       44.97 │      -20.46 │
+     └───────────────────────────────────────────────────────────────────────────┘
+     ✅ Autocorrelation plot saved: autocorr_ang_principal.png
+     ✅ Frequency spectrum plot saved: spectrum_ang_principal.png
+     ✅ Spectrogram saved: spectrogram_ang_principal.png
+     ✅ Phase detection plot saved: phases_ang_principal.png
+     ✅ Repetition detection plot saved: repetitions_ang_principal.png
+     ✅ Base vs Advanced comparison plot saved: repetitions_comparison_ang_principal.png
+     ⚠️  Phase validation: 11 repetitions lack proper phase sequence or cyclic behavior
+        • Rep #1: Missing phase sequence (has_asc=True, has_desc=False), Not cyclic (Δangle=37.4°)
+        • Rep #2: Missing phase sequence (has_asc=False, has_desc=False)
+        • Rep #3: Missing phase sequence (has_asc=False, has_desc=False)
+
+────────────────────────────────────────────────────────────────────────────────
+📊 AXIS: ANG1_FILTERED
+────────────────────────────────────────────────────────────────────────────────
+
+  📈 Descriptive Statistics:
+     • Min:          -91.12° (sample  26861)
+     • Max:          -45.46° (sample      0)
+     • Range:         45.66°
+     • Mean:         -83.05°
+     • Median:       -83.02°
+     • Std Dev:        2.38°
+     • Skewness:       7.61
+     • Kurtosis:     103.23
+
+  🔬 Signal Quality:
+     • Dynamic range (5-95%):     3.76°
+     • Noise estimate (diff):   0.0342°
+     • SNR-like index:          109.99
+     • Clipping (low/high):      1 /    1 samples
+
+  🔍 Signal Properties:
+     • ✓ Stationary (ADF p-value < 0.05)
+     • Linear trend: -0.0206 deg/s
+     • Peaks detected:    325
+     • Troughs detected:  326
+
+  🌊 Frequency & Periodicity:
+     • Dominant frequency: 0.0256 Hz (period: 39.04s)
+     • Top frequency peaks (Hz):
+        1. 0.3842 Hz (period=2.60s, power=4.75e+00)
+        2. 0.2049 Hz (period=4.88s, power=3.63e+00)
+        3. 0.2817 Hz (period=3.55s, power=3.15e+00)
+        4. 0.8964 Hz (period=1.12s, power=3.13e+00)
+        5. 1.3318 Hz (period=0.75s, power=3.08e+00)
+     • Estimated period:   39.04 s
+     • Autocorr periodicity: 1 samples (lag of 1st peak)
+
+  🔄 Cycle Analysis:
+     • Total cycles:        23
+     • Cycle peaks:         12
+     • Cycle troughs:       11
+
+  🧬 Cycle-Level Metrics:
+     • Mean cycle duration:   1.750 s (CV=64.98%)
+     • Mean cycle amplitude:  2.11° (CV=87.75%)
+     • Trend duration/cycle:  -0.0411 s/cycle
+     • Trend amplitude/cycle: +0.0018 °/cycle
+
+  📍 Phase Statistics:
+     • ascending  : n=  1, mean=0.435s, CV=0.00%, total=0.4s
+     • stable_high: n= 13, mean=1.708s, CV=54.36%, total=22.2s
+     • stable_low : n=  8, mean=1.981s, CV=69.22%, total=15.8s
+
+  📉 Sliding-Window Stats (2.0s window, 0.5s step):
+     • Std of window means: 0.77°
+     • Std of window stds:  0.87°
+     • Mean window std:     0.52°
+
+  🏋️ EXERCISE REPETITION ANALYSIS:
+     ╔═══════════════════════════════════════════════════════════════════════════╗
+     ║                     REPETITION COUNT & IDENTIFICATION                     ║
+     ╠═══════════════════════════════════════════════════════════════════════════╣
+     ║ Total Repetitions Detected:  11                                        ║
+     ║ Detection Threshold (prominence):   0.75°                                 ║
+     ║ ⚠️  Suspicious Reps (ROM<50% median):  11 (100.0%)                            ║
+     ╚═══════════════════════════════════════════════════════════════════════════╝
+
+     📊 PER-REPETITION METRICS:
+     ┌───────────────────────────────────────────────────────────────────────────┐
+     │ Rep  │ Time (s)   │ Duration (s) │ Range (°)   │ Depth (°)   │
+     ├───────────────────────────────────────────────────────────────────────────┤
+     │⚠️1   │       0.19 │         2.08 │       44.59 │      -90.05 │
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1581: UserWarning: Glyph 128279 (\N{LINK SYMBOL}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1582: UserWarning: Glyph 128279 (\N{LINK SYMBOL}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"autocorr_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1617: UserWarning: Glyph 128202 (\N{BAR CHART}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1617: UserWarning: Glyph 128269 (\N{LEFT-POINTING MAGNIFYING GLASS}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1618: UserWarning: Glyph 128202 (\N{BAR CHART}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"spectrum_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1618: UserWarning: Glyph 128269 (\N{LEFT-POINTING MAGNIFYING GLASS}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"spectrum_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1632: UserWarning: Glyph 127752 (\N{RAINBOW}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1633: UserWarning: Glyph 127752 (\N{RAINBOW}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"spectrogram_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128205 (\N{ROUND PUSHPIN}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128316 (\N{UP-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128999 (\N{LARGE ORANGE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128998 (\N{LARGE BLUE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128205 (\N{ROUND PUSHPIN}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128316 (\N{UP-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128999 (\N{LARGE ORANGE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128998 (\N{LARGE BLUE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1793: UserWarning: Glyph 127947 (\N{WEIGHT LIFTER}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1794: UserWarning: Glyph 127947 (\N{WEIGHT LIFTER}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"repetitions_{angle_col}.png"), dpi=150, bbox_inches='tight')
+     │⚠️2   │       3.97 │         4.66 │        1.27 │      -84.29 │
+     │⚠️3   │       9.51 │         4.25 │        1.93 │      -83.89 │
+     │⚠️4   │      12.48 │         3.89 │        1.41 │      -83.18 │
+     │⚠️5   │      17.30 │         4.02 │        1.48 │      -83.14 │
+     │⚠️6   │      20.53 │         3.96 │        1.29 │      -83.35 │
+     │⚠️7   │      25.22 │         3.43 │        1.30 │      -83.38 │
+     │⚠️8   │      27.39 │         3.50 │        1.98 │      -83.81 │
+     │⚠️9   │      32.23 │         3.98 │        2.38 │      -83.86 │
+     │⚠️10  │      35.35 │         3.22 │        1.88 │      -83.65 │
+     │⚠️11  │      38.68 │         2.03 │       45.26 │      -91.12 │
+     └───────────────────────────────────────────────────────────────────────────┘
+
+     ⏱️  INTER-REPETITION INTERVALS:
+        • Mean interval:      3.85 s
+        • Std deviation:      1.02 s
+        • Min interval:       2.16 s
+        • Max interval:       5.54 s
+        • Coefficient of variation:  26.4%
+
+     📏 RANGE OF MOTION ANALYSIS:
+        • Mean range:         9.53°
+        • Std deviation:     16.69°
+        • Min range:          1.27°
+        • Max range:         45.26°
+        • Consistency (CV): 175.2%
+
+     ⏲️  REPETITION DURATION ANALYSIS:
+        • Mean duration:      3.55 s
+        • Std deviation:      0.80 s
+        • Tempo CV:          22.5%
+
+     ⭐ PERFORMANCE QUALITY METRICS:
+        • Overall Consistency Score:  25.3/100
+        • Range Consistency (lower=better):  175.2%
+        • Timing Consistency (lower=better):  26.4%
+        • Tempo Consistency (lower=better):   22.5%
+        • Fatigue Indicator: INCREASING (+0.074°/rep)
+
+     🎯 DERIVED METRICS:
+        • Average repetition frequency: 0.2598 Hz (3.85 s/rep)
+        • Total exercise duration: 38.49 s
+        • Work density: 17.1 reps/minute
+     ✅ Autocorrelation plot saved: autocorr_ang1_filtered.png
+     ✅ Frequency spectrum plot saved: spectrum_ang1_filtered.png
+     ✅ Spectrogram saved: spectrogram_ang1_filtered.png
+     ✅ Phase detection plot saved: phases_ang1_filtered.png
+     ✅ Repetition detection plot saved: repetitions_ang1_filtered.png
+     ⚠️  Phase validation: 6 repetitions lack proper phase sequence or cyclic behavior
+        • Rep #1: Missing phase sequence (has_asc=True, has_desc=False), Not cyclic (Δangle=10.6°)
+        • Rep #2: Missing phase sequence (has_asc=False, has_desc=True)
+        • Rep #6: Missing phase sequence (has_asc=False, has_desc=False)
+
+────────────────────────────────────────────────────────────────────────────────
+📊 AXIS: ANG2_FILTERED
+────────────────────────────────────────────────────────────────────────────────
+
+  📈 Descriptive Statistics:
+     • Min:          -20.91° (sample    135)
+     • Max:            7.10° (sample   7289)
+     • Range:         28.01°
+     • Mean:          -2.08°
+     • Median:        -1.57°
+     • Std Dev:        3.44°
+     • Skewness:      -1.36
+     • Kurtosis:       5.32
+
+  🔬 Signal Quality:
+     • Dynamic range (5-95%):    12.43°
+     • Noise estimate (diff):   0.0202°
+     • SNR-like index:          615.83
+     • Clipping (low/high):      1 /    1 samples
+
+  🔍 Signal Properties:
+     • ✓ Stationary (ADF p-value < 0.05)
+     • Linear trend: -0.0163 deg/s
+     • Peaks detected:    318
+     • Troughs detected:  319
+
+  🌊 Frequency & Periodicity:
+     • Dominant frequency: 0.0256 Hz (period: 39.04s)
+     • Top frequency peaks (Hz):
+        1. 0.6147 Hz (period=1.63s, power=2.58e+01)
+        2. 0.5379 Hz (period=1.86s, power=1.57e+01)
+     • Estimated period:   39.04 s
+     • Autocorr periodicity: 1 samples (lag of 1st peak)
+
+  🔄 Cycle Analysis:
+     • Total cycles:        42
+     • Cycle peaks:         21
+     • Cycle troughs:       21
+
+  🧬 Cycle-Level Metrics:
+     • Mean cycle duration:   0.943 s (CV=61.87%)
+     • Mean cycle amplitude:  5.08° (CV=86.66%)
+     • Trend duration/cycle:  +0.0033 s/cycle
+     • Trend amplitude/cycle: -0.1078 °/cycle
+
+  📍 Phase Statistics:
+     • ascending  : n=  6, mean=0.655s, CV=24.00%, total=3.9s
+     • descending : n=  8, mean=0.673s, CV=29.17%, total=5.4s
+     • stable_high: n= 15, mean=1.160s, CV=65.33%, total=17.4s
+     • stable_low : n= 12, mean=0.995s, CV=50.77%, total=11.9s
+
+  📉 Sliding-Window Stats (2.0s window, 0.5s step):
+     • Std of window means: 2.01°
+     • Std of window stds:  1.38°
+     • Mean window std:     1.50°
+
+  🏋️ EXERCISE REPETITION ANALYSIS:
+     ╔═══════════════════════════════════════════════════════════════════════════╗
+     ║                     REPETITION COUNT & IDENTIFICATION                     ║
+     ╠═══════════════════════════════════════════════════════════════════════════╣
+     ║ Total Repetitions Detected:  10                                        ║
+     ║ Detection Threshold (prominence):   2.49°                                 ║
+     ║ ⚠️  Suspicious Reps (ROM<50% median):   6 (60.0%)                            ║
+     ╚═══════════════════════════════════════════════════════════════════════════╝
+
+     📊 PER-REPETITION METRICS:
+     ┌───────────────────────────────────────────────────────────────────────────┐
+     │ Rep  │ Time (s)   │ Duration (s) │ Range (°)   │ Depth (°)   │
+     ├───────────────────────────────────────────────────────────────────────────┤
+     │⚠️1   │       0.19 │         1.63 │       19.80 │      -20.91 │
+     │⚠️2   │       3.07 │         3.43 │        7.35 │       -8.84 │
+     │ 3   │       7.05 │         3.23 │        7.47 │       -4.08 │
+     │ 4   │       9.53 │         2.72 │       13.75 │       -6.64 │
+     │ 5   │      12.49 │         5.50 │       12.03 │       -2.52 │
+     │⚠️6   │      20.53 │         7.45 │        2.68 │       -2.25 │
+     │⚠️7   │      27.39 │         6.01 │        3.77 │       -3.06 │
+     │⚠️8   │      32.54 │         3.98 │        4.16 │       -3.99 │
+     │ 9   │      35.34 │         3.15 │       11.53 │       -4.38 │
+     │⚠️10  │      38.85 │         1.95 │       10.04 │      -15.92 │
+     └───────────────────────────────────────────────────────────────────────────┘
+
+     ⏱️  INTER-REPETITION INTERVALS:
+        • Mean interval:      4.30 s
+        • Std deviation:      1.87 s
+        • Min interval:       2.48 s
+        • Max interval:       8.04 s
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1581: UserWarning: Glyph 128279 (\N{LINK SYMBOL}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1582: UserWarning: Glyph 128279 (\N{LINK SYMBOL}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"autocorr_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1617: UserWarning: Glyph 128202 (\N{BAR CHART}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1617: UserWarning: Glyph 128269 (\N{LEFT-POINTING MAGNIFYING GLASS}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1618: UserWarning: Glyph 128202 (\N{BAR CHART}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"spectrum_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1618: UserWarning: Glyph 128269 (\N{LEFT-POINTING MAGNIFYING GLASS}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"spectrum_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1632: UserWarning: Glyph 127752 (\N{RAINBOW}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1633: UserWarning: Glyph 127752 (\N{RAINBOW}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"spectrogram_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128205 (\N{ROUND PUSHPIN}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128316 (\N{UP-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128317 (\N{DOWN-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128999 (\N{LARGE ORANGE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128998 (\N{LARGE BLUE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128205 (\N{ROUND PUSHPIN}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128316 (\N{UP-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128317 (\N{DOWN-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128999 (\N{LARGE ORANGE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128998 (\N{LARGE BLUE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1793: UserWarning: Glyph 127947 (\N{WEIGHT LIFTER}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1794: UserWarning: Glyph 127947 (\N{WEIGHT LIFTER}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"repetitions_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1581: UserWarning: Glyph 128279 (\N{LINK SYMBOL}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1582: UserWarning: Glyph 128279 (\N{LINK SYMBOL}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"autocorr_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1617: UserWarning: Glyph 128202 (\N{BAR CHART}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1617: UserWarning: Glyph 128269 (\N{LEFT-POINTING MAGNIFYING GLASS}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1618: UserWarning: Glyph 128202 (\N{BAR CHART}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"spectrum_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1618: UserWarning: Glyph 128269 (\N{LEFT-POINTING MAGNIFYING GLASS}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"spectrum_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1632: UserWarning: Glyph 127752 (\N{RAINBOW}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1633: UserWarning: Glyph 127752 (\N{RAINBOW}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"spectrogram_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128205 (\N{ROUND PUSHPIN}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128316 (\N{UP-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128317 (\N{DOWN-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128999 (\N{LARGE ORANGE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128998 (\N{LARGE BLUE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128205 (\N{ROUND PUSHPIN}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128316 (\N{UP-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128317 (\N{DOWN-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128999 (\N{LARGE ORANGE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128998 (\N{LARGE BLUE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1793: UserWarning: Glyph 127947 (\N{WEIGHT LIFTER}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1794: UserWarning: Glyph 127947 (\N{WEIGHT LIFTER}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"repetitions_{angle_col}.png"), dpi=150, bbox_inches='tight')
+        • Coefficient of variation:  43.5%
+
+     📏 RANGE OF MOTION ANALYSIS:
+        • Mean range:         9.26°
+        • Std deviation:      5.01°
+        • Min range:          2.68°
+        • Max range:         19.80°
+        • Consistency (CV):  54.1%
+
+     ⏲️  REPETITION DURATION ANALYSIS:
+        • Mean duration:      3.90 s
+        • Std deviation:      1.77 s
+        • Tempo CV:          45.3%
+
+     ⭐ PERFORMANCE QUALITY METRICS:
+        • Overall Consistency Score:  52.4/100
+        • Range Consistency (lower=better):   54.1%
+        • Timing Consistency (lower=better):  43.5%
+        • Tempo Consistency (lower=better):   45.3%
+        • Fatigue Indicator: DECREASING (-0.694°/rep)
+          ⚠️  WARNING: Significant range decrease detected (possible fatigue)
+
+     🎯 DERIVED METRICS:
+        • Average repetition frequency: 0.2328 Hz (4.30 s/rep)
+        • Total exercise duration: 38.66 s
+        • Work density: 15.5 reps/minute
+     ✅ Autocorrelation plot saved: autocorr_ang2_filtered.png
+     ✅ Frequency spectrum plot saved: spectrum_ang2_filtered.png
+     ✅ Spectrogram saved: spectrogram_ang2_filtered.png
+     ✅ Phase detection plot saved: phases_ang2_filtered.png
+     ✅ Repetition detection plot saved: repetitions_ang2_filtered.png
+     ⚠️  Phase validation: 5 repetitions lack proper phase sequence or cyclic behavior
+        • Rep #1: Missing phase sequence (has_asc=False, has_desc=False), Not cyclic (Δangle=47.8°)
+        • Rep #3: Missing phase sequence (has_asc=False, has_desc=False)
+        • Rep #4: Not cyclic (Δangle=15.8°)
+
+────────────────────────────────────────────────────────────────────────────────
+📊 AXIS: ANG3_FILTERED
+────────────────────────────────────────────────────────────────────────────────
+
+  📈 Descriptive Statistics:
+     • Min:         -136.47° (sample  21771)
+     • Max:          -59.07° (sample      0)
+     • Range:         77.40°
+     • Mean:        -119.36°
+     • Median:      -116.63°
+     • Std Dev:       10.25°
+     • Skewness:       0.17
+     • Kurtosis:       0.28
+
+  🔬 Signal Quality:
+     • Dynamic range (5-95%):    27.13°
+     • Noise estimate (diff):   0.0504°
+     • SNR-like index:          538.43
+     • Clipping (low/high):      1 /    1 samples
+
+  🔍 Signal Properties:
+     • ✗ Non-stationary (ADF p-value < 0.05)
+     • Linear trend: -0.3641 deg/s
+     • Peaks detected:    260
+     • Troughs detected:  261
+
+  🌊 Frequency & Periodicity:
+     • Dominant frequency: 0.0256 Hz (period: 39.04s)
+     • Top frequency peaks (Hz):
+        1. 0.0768 Hz (period=13.01s, power=4.80e+02)
+        2. 0.2561 Hz (period=3.90s, power=3.53e+02)
+        3. 0.1281 Hz (period=7.81s, power=2.97e+02)
+     • Estimated period:   39.04 s
+     • Autocorr periodicity: 1 samples (lag of 1st peak)
+
+  🔄 Cycle Analysis:
+     • Total cycles:        27
+     • Cycle peaks:         14
+     • Cycle troughs:       13
+
+  🧬 Cycle-Level Metrics:
+     • Mean cycle duration:   1.480 s (CV=54.04%)
+     • Mean cycle amplitude:  12.45° (CV=70.71%)
+     • Trend duration/cycle:  +0.0213 s/cycle
+     • Trend amplitude/cycle: +0.5352 °/cycle
+
+  📍 Phase Statistics:
+     • ascending  : n=  8, mean=1.475s, CV=53.85%, total=11.8s
+     • descending : n=  7, mean=2.198s, CV=19.92%, total=15.4s
+     • stable_high: n= 10, mean=1.091s, CV=57.57%, total=10.9s
+     • stable_low : n=  1, mean=0.390s, CV=0.00%, total=0.4s
+
+  📉 Sliding-Window Stats (2.0s window, 0.5s step):
+     • Std of window means: 8.75°
+     • Std of window stds:  2.35°
+     • Mean window std:     4.02°
+
+  🏋️ EXERCISE REPETITION ANALYSIS:
+     ╔═══════════════════════════════════════════════════════════════════════════╗
+     ║                     REPETITION COUNT & IDENTIFICATION                     ║
+     ╠═══════════════════════════════════════════════════════════════════════════╣
+     ║ Total Repetitions Detected:   9                                        ║
+     ║ Detection Threshold (prominence):   5.43°                                 ║
+     ║ ⚠️  Suspicious Reps (ROM<50% median):   6 (66.7%)                            ║
+     ╚═══════════════════════════════════════════════════════════════════════════╝
+
+     📊 PER-REPETITION METRICS:
+     ┌───────────────────────────────────────────────────────────────────────────┐
+     │ Rep  │ Time (s)   │ Duration (s) │ Range (°)   │ Depth (°)   │
+     ├───────────────────────────────────────────────────────────────────────────┤
+     │⚠️1   │       0.19 │         2.05 │       58.56 │     -117.63 │
+     │⚠️2   │       3.91 │         3.42 │       10.43 │     -115.47 │
+     │⚠️3   │       7.04 │         6.09 │        8.32 │     -115.19 │
+     │⚠️4   │      16.09 │         6.31 │       27.14 │     -133.77 │
+     │ 5   │      19.66 │         3.67 │       20.57 │     -134.40 │
+     │ 6   │      23.43 │         3.91 │       22.87 │     -133.99 │
+     │ 7   │      27.48 │         3.96 │       22.26 │     -136.29 │
+     │⚠️8   │      31.35 │         5.60 │       32.84 │     -136.47 │
+     │⚠️9   │      38.68 │         4.02 │       65.85 │     -129.91 │
+     └───────────────────────────────────────────────────────────────────────────┘
+
+     ⏱️  INTER-REPETITION INTERVALS:
+        • Mean interval:      4.81 s
+        • Std deviation:      2.01 s
+        • Min interval:       3.13 s
+        • Max interval:       9.05 s
+        • Coefficient of variation:  41.8%
+
+     📏 RANGE OF MOTION ANALYSIS:
+        • Mean range:        29.87°
+        • Std deviation:     18.77°
+        • Min range:          8.32°
+        • Max range:         65.85°
+        • Consistency (CV):  62.8%
+
+     ⏲️  REPETITION DURATION ANALYSIS:
+        • Mean duration:      4.34 s
+        • Std deviation:      1.31 s
+        • Tempo CV:          30.3%
+
+     ⭐ PERFORMANCE QUALITY METRICS:
+        • Overall Consistency Score:  55.0/100
+        • Range Consistency (lower=better):   62.8%
+        • Timing Consistency (lower=better):  41.8%
+        • Tempo Consistency (lower=better):   30.3%
+        • Fatigue Indicator: INCREASING (+2.001°/rep)
+
+     🎯 DERIVED METRICS:
+        • Average repetition frequency: 0.2078 Hz (4.81 s/rep)
+        • Total exercise duration: 38.49 s
+        • Work density: 14.0 reps/minute
+     ✅ Autocorrelation plot saved: autocorr_ang3_filtered.png
+     ✅ Frequency spectrum plot saved: spectrum_ang3_filtered.png
+     ✅ Spectrogram saved: spectrogram_ang3_filtered.png
+     ✅ Phase detection plot saved: phases_ang3_filtered.png
+     ✅ Repetition detection plot saved: repetitions_ang3_filtered.png
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1581: UserWarning: Glyph 128279 (\N{LINK SYMBOL}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1582: UserWarning: Glyph 128279 (\N{LINK SYMBOL}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"autocorr_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1617: UserWarning: Glyph 128202 (\N{BAR CHART}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1617: UserWarning: Glyph 128269 (\N{LEFT-POINTING MAGNIFYING GLASS}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1618: UserWarning: Glyph 128202 (\N{BAR CHART}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"spectrum_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1618: UserWarning: Glyph 128269 (\N{LEFT-POINTING MAGNIFYING GLASS}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"spectrum_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1632: UserWarning: Glyph 127752 (\N{RAINBOW}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1633: UserWarning: Glyph 127752 (\N{RAINBOW}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"spectrogram_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128205 (\N{ROUND PUSHPIN}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128316 (\N{UP-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128317 (\N{DOWN-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128999 (\N{LARGE ORANGE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1698: UserWarning: Glyph 128998 (\N{LARGE BLUE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128205 (\N{ROUND PUSHPIN}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128316 (\N{UP-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128317 (\N{DOWN-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128999 (\N{LARGE ORANGE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1699: UserWarning: Glyph 128998 (\N{LARGE BLUE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"phases_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1793: UserWarning: Glyph 127947 (\N{WEIGHT LIFTER}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:1794: UserWarning: Glyph 127947 (\N{WEIGHT LIFTER}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), f"repetitions_{angle_col}.png"), dpi=150, bbox_inches='tight')
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:2026: UserWarning: Glyph 127919 (\N{DIRECT HIT}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:2026: UserWarning: Glyph 128316 (\N{UP-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:2026: UserWarning: Glyph 128317 (\N{DOWN-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:2026: UserWarning: Glyph 128999 (\N{LARGE ORANGE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:2026: UserWarning: Glyph 128998 (\N{LARGE BLUE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:2028: UserWarning: Glyph 127919 (\N{DIRECT HIT}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), overview_filename),
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:2028: UserWarning: Glyph 128316 (\N{UP-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), overview_filename),
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:2028: UserWarning: Glyph 128317 (\N{DOWN-POINTING SMALL RED TRIANGLE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), overview_filename),
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:2028: UserWarning: Glyph 128999 (\N{LARGE ORANGE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), overview_filename),
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:2028: UserWarning: Glyph 128998 (\N{LARGE BLUE SQUARE}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), overview_filename),
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:2026: UserWarning: Glyph 9989 (\N{WHITE HEAVY CHECK MARK}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/find_time_intervals.py:2028: UserWarning: Glyph 9989 (\N{WHITE HEAVY CHECK MARK}) missing from font(s) DejaVu Sans.
+  plt.savefig(os.path.join(os.path.dirname(path_of_this_script), overview_filename),
+     ⚠️  Phase validation: 4 repetitions lack proper phase sequence or cyclic behavior
+        • Rep #2: Missing phase sequence (has_asc=False, has_desc=False)
+        • Rep #3: Not cyclic (Δangle=15.8°)
+        • Rep #7: Not cyclic (Δangle=17.3°)
+
+────────────────────────────────────────────────────────────────────────────────
+📊 AXIS: ANG_PRINCIPAL_FILTERED
+────────────────────────────────────────────────────────────────────────────────
+
+  📈 Descriptive Statistics:
+     • Min:          -16.76° (sample  21771)
+     • Max:           16.29° (sample  24244)
+     • Range:         33.05°
+     • Mean:           0.03°
+     • Median:         2.56°
+     • Std Dev:        9.72°
+     • Skewness:      -0.22
+     • Kurtosis:      -1.47
+
+  🔬 Signal Quality:
+     • Dynamic range (5-95%):    26.97°
+     • Noise estimate (diff):   0.0222°
+     • SNR-like index:         1214.90
+     • Clipping (low/high):      1 /    2 samples
+
+  🔍 Signal Properties:
+     • ✗ Non-stationary (ADF p-value < 0.05)
+     • Linear trend: -0.3645 deg/s
+     • Peaks detected:    261
+     • Troughs detected:  261
+
+  🌊 Frequency & Periodicity:
+     • Dominant frequency: 0.0256 Hz (period: 39.04s)
+     • Top frequency peaks (Hz):
+        1. 0.0768 Hz (period=13.01s, power=4.71e+02)
+        2. 0.2561 Hz (period=3.90s, power=4.55e+02)
+        3. 0.1281 Hz (period=7.81s, power=4.00e+02)
+     • Estimated period:   39.04 s
+     • Autocorr periodicity: 1 samples (lag of 1st peak)
+
+  🔄 Cycle Analysis:
+     • Total cycles:        26
+     • Cycle peaks:         14
+     • Cycle troughs:       12
+
+  🧬 Cycle-Level Metrics:
+     • Mean cycle duration:   1.447 s (CV=56.53%)
+     • Mean cycle amplitude:  12.50° (CV=71.69%)
+     • Trend duration/cycle:  +0.0314 s/cycle
+     • Trend amplitude/cycle: +0.6082 °/cycle
+
+  📍 Phase Statistics:
+     • ascending  : n=  8, mean=1.475s, CV=53.85%, total=11.8s
+     • descending : n=  7, mean=2.198s, CV=19.92%, total=15.4s
+     • stable_high: n=  9, mean=0.956s, CV=61.40%, total=8.6s
+     • stable_low : n=  1, mean=0.390s, CV=0.00%, total=0.4s
+
+  📉 Sliding-Window Stats (2.0s window, 0.5s step):
+     • Std of window means: 8.72°
+     • Std of window stds:  2.25°
+     • Mean window std:     3.91°
+
+  🏋️ EXERCISE REPETITION ANALYSIS:
+     ╔═══════════════════════════════════════════════════════════════════════════╗
+     ║                     REPETITION COUNT & IDENTIFICATION                     ║
+     ╠═══════════════════════════════════════════════════════════════════════════╣
+     ║ Total Repetitions Detected:   8                                        ║
+     ║ Detection Threshold (prominence):   5.39°                                 ║
+     ║ ⚠️  Suspicious Reps (ROM<50% median):   4 (50.0%)                            ║
+     ╚═══════════════════════════════════════════════════════════════════════════╝
+
+     📊 PER-REPETITION METRICS:
+     ┌───────────────────────────────────────────────────────────────────────────┐
+     │ Rep  │ Time (s)   │ Duration (s) │ Range (°)   │ Depth (°)   │
+     ├───────────────────────────────────────────────────────────────────────────┤
+     │ 1   │       3.91 │         5.47 │       14.41 │        4.10 │
+     │⚠️2   │       7.04 │         6.09 │        8.34 │        4.44 │
+     │⚠️3   │      16.09 │         6.31 │       27.20 │      -14.03 │
+     │ 4   │      19.66 │         3.67 │       20.61 │      -14.68 │
+     │ 5   │      23.43 │         3.91 │       22.90 │      -14.26 │
+     │ 6   │      27.48 │         3.96 │       22.28 │      -16.60 │
+     │⚠️7   │      31.35 │         5.60 │       33.05 │      -16.76 │
+     │⚠️8   │      38.68 │         4.02 │       25.93 │      -10.66 │
+     └───────────────────────────────────────────────────────────────────────────┘
+
+     ⏱️  INTER-REPETITION INTERVALS:
+        • Mean interval:      4.97 s
+        • Std deviation:      2.10 s
+        • Min interval:       3.13 s
+        • Max interval:       9.05 s
+        • Coefficient of variation:  42.4%
+
+     📏 RANGE OF MOTION ANALYSIS:
+        • Mean range:        21.84°
+        • Std deviation:      7.17°
+        • Min range:          8.34°
+        • Max range:         33.05°
+        • Consistency (CV):  32.8%
+
+     ⏲️  REPETITION DURATION ANALYSIS:
+        • Mean duration:      4.88 s
+        • Std deviation:      1.02 s
+        • Tempo CV:          21.0%
+
+     ⭐ PERFORMANCE QUALITY METRICS:
+        • Overall Consistency Score:  68.0/100
+        • Range Consistency (lower=better):   32.8%
+        • Timing Consistency (lower=better):  42.4%
+        • Tempo Consistency (lower=better):   21.0%
+        • Fatigue Indicator: INCREASING (+2.282°/rep)
+
+     🎯 DERIVED METRICS:
+        • Average repetition frequency: 0.2013 Hz (4.97 s/rep)
+        • Total exercise duration: 34.78 s
+        • Work density: 13.8 reps/minute
+     ✅ Autocorrelation plot saved: autocorr_ang_principal_filtered.png
+     ✅ Frequency spectrum plot saved: spectrum_ang_principal_filtered.png
+     ✅ Spectrogram saved: spectrogram_ang_principal_filtered.png
+     ✅ Phase detection plot saved: phases_ang_principal_filtered.png
+     ✅ Repetition detection plot saved: repetitions_ang_principal_filtered.png
+
+================================================================================
+📊 GENERATING COMPREHENSIVE OVERVIEW PLOTS
+================================================================================
+  Creating full time-series with all detected regions for ALL signals...
+  • Generating overview plot for ANG1...
+  ✅ Complete overview saved: overview_complete_ang1.png
+  • Generating overview plot for ANG2...
+  ✅ Complete overview saved: overview_complete_ang2.png
+  • Generating overview plot for ANG3...
+  ✅ Complete overview saved: overview_complete_ang3.png
+  • Generating overview plot for ANG_PRINCIPAL...
+  ✅ Complete overview saved: overview_complete_ang_principal.png
+  • Generating overview plot for ANG1_FILTERED...
+  ✅ Complete overview saved: overview_complete_ang1_filtered.png
+  • Generating overview plot for ANG2_FILTERED...
+  ✅ Complete overview saved: overview_complete_ang2_filtered.png
+  • Generating overview plot for ANG3_FILTERED...
+  ✅ Complete overview saved: overview_complete_ang3_filtered.png
+  • Generating overview plot for ANG_PRINCIPAL_FILTERED...
+  ✅ Complete overview saved: overview_complete_ang_principal_filtered.png
+================================================================================
+
+
+================================================================================
+📊 CROSS-AXIS CORRELATIONS
+================================================================================
+  • ANG1 ↔ ANG2: +0.862
+  • ANG1 ↔ ANG3: +0.008
+  • ANG2 ↔ ANG3: +0.063
+
+🔎 Lagged Cross-Correlations:
+  • ANG1↔ANG2: max corr=+0.862 at lag=+0.000s (+0 samples)
+  • ANG1↔ANG3: max corr=-0.138 at lag=-0.961s (-667 samples)
+  • ANG2↔ANG3: max corr=-0.098 at lag=-0.961s (-667 samples)
+
+================================================================================
+✓ ANALYSIS COMPLETE
+================================================================================
+
+--------------------------------------------------------------------------------
+GENERATING REPORTS
+--------------------------------------------------------------------------------
+HTML report saved to /Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/FILE_EULER2025-10-28-10-23-31_report.html
+Cycle statistics saved to /Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/FILE_EULER2025-10-28-10-23-31_report_cycles.json
+Phase statistics saved to /Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/FILE_EULER2025-10-28-10-23-31_report_phases.json
+Repetition statistics saved to /Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/FILE_EULER2025-10-28-10-23-31_report_repetitions.json
+
+================================================================================
+🎉 ADVANCED BIOMECHANICS ANALYSIS COMPLETE
+================================================================================
+
+📦 Generated outputs:
+  ✅ Resampled data CSV with principal component (original + filtered)
+  ✅ Time series plots: original, filtered, and comparison
+  ✅ Autocorrelation plots (8 signals: 4 original + 4 filtered)
+  ✅ Frequency spectrum plots (8 signals) 📊 - shows true frequencies vs noise
+  ✅ Spectrograms (8 signals) 🌈 - time-frequency evolution
+  ✅ Comprehensive HTML report
+  ✅ JSON cycle & phase statistics
+
+
+💡 TIP: Compare original vs filtered spectrum plots to identify true frequencies!
+   Filtered signals show cleaner frequency peaks without noise artifacts.
+
