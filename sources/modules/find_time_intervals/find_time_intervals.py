@@ -1090,7 +1090,7 @@ print("="*80)
 print("BIOMECHANICS SIGNAL ANALYSIS - EULER ANGLES")
 print("="*80)
 
-file_path = "/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/FILE_EULER2025-10-28-10-23-31.txt"
+file_path = "/Volumes/nvme/Github/bmyLab4Biomechs/sources/modules/find_time_intervals/FILE_EULER2015-1-1-13-06-49.txt"
 file_name = os.path.basename(file_path)  # Extract filename for analysis
 
 # Check if the file exists
@@ -2465,7 +2465,16 @@ for angle_col in ["ang1", "ang2", "ang3", "ang_principal",
     
     # Store figure for this signal
     plotly_figures[angle_col] = fig
-    print(f"  ✅ Interactive plot data ready for {angle_col.upper()}")
+    
+    # Extract session ID from filename (e.g., "FILE_EULER2015-1-1-13-06-49.txt" -> "2015-1-1-13-06-49")
+    session_id = file_name.replace("FILE_EULER", "").replace(".txt", "")
+    
+    # Save interactive HTML with session-specific name
+    interactive_html_path = os.path.join(os.path.dirname(path_of_this_script), 
+                                          f"interactive_{angle_col}_{session_id}.html")
+    fig.write_html(interactive_html_path, include_plotlyjs='cdn')
+    
+    print(f"  ✅ Interactive plot saved: interactive_{angle_col}_{session_id}.html")
 
 print(f"{'='*80}\n")
 
@@ -3430,7 +3439,7 @@ with open(report_path, "w") as f:
                     </p>
                 </div>
                 <!-- Embed interactive plot using iframe -->
-                <iframe src="interactive_{angle_col}.html" width="100%" height="500" frameborder="0" style="border: 1px solid #e0e0e0; border-radius: 8px; margin-bottom: 20px;"></iframe>
+                <iframe src="interactive_{angle_col}_{file_name.replace('FILE_EULER', '').replace('.txt', '')}.html" width="100%" height="500" frameborder="0" style="border: 1px solid #e0e0e0; border-radius: 8px; margin-bottom: 20px;"></iframe>
                 
                 <div class="stats-grid">
                     <div class="stat-item">
